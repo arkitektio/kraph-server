@@ -7,6 +7,7 @@ properties fold — overridden per property by `rule.evidence`. Sameness is the
 view's own rule (RFC 0024), held next door.
 """
 
+from collections.abc import Mapping
 from datetime import timedelta
 
 import kante
@@ -17,25 +18,29 @@ from kante.context import HttpContext
 from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, rules, writes
 from tests.support import rules as R
 from tests.support.graphs import example_graph as _example_graph
 from tests.support.graphs import graph_declaring as _graph_declaring
 from tests.support.graphs import rebuild as _rebuild
+from tests.support.identity import owned_by
 from tests.support.writes import CREATE_GRAPH
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_metrics_fold_under_rule_evidence(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """`rule.evidence` is the property's own metric rule; INFORMS routing stays
     the category's (who may attach evidence to this node)."""
     graph_id = await _example_graph(api_schema, simple_api_context, "trust-metrics")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> Mapping[str, object]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         ais = claims.mint(org, "AIS", "peter", asserted_at=graphs.BEFORE_TREATMENT)
@@ -86,13 +91,15 @@ async def test_metrics_fold_under_rule_evidence(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_informs_routing_folds_under_the_categorys_clauses(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Evidence routed to a node by somebody its category does not trust is not counted."""
     graph_id = await _example_graph(api_schema, simple_api_context, "trust-informs")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> Mapping[str, object]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         ais = claims.mint(org, "AIS", "peter", asserted_at=graphs.BEFORE_TREATMENT)
@@ -182,7 +189,9 @@ EXPLAIN = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_supporting_evidence_agrees_with_the_fold(
-    api_schema: kante.Schema, simple_api_context: HttpContext, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     definition = {
         "extensions": {
@@ -216,10 +225,11 @@ async def test_supporting_evidence_agrees_with_the_fold(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
     @sync_to_async
-    def build():
+    def build() -> str:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         ref = claims.mint(org, "Probe", "anyone")
@@ -251,6 +261,7 @@ async def test_supporting_evidence_agrees_with_the_fold(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     prop = next(
         p for p in read.data["node"]["richProperties"] if p["key"] == "avg_length"
     )
@@ -267,8 +278,8 @@ async def test_supporting_evidence_agrees_with_the_fold(
 async def test_narrowing_a_categorys_trust_takes_derived_values_and_windows_with_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
-    backend_stack,
+    table_projector: TableProjector,
+    backend_stack: tuple[int, int],
 ) -> None:
     """The metric lane, end to end, at category grain (RFC 0009).
 
@@ -284,7 +295,7 @@ async def test_narrowing_a_categorys_trust_takes_derived_values_and_windows_with
     )
 
     @sync_to_async
-    def declare_property():
+    def declare_property() -> None:
         category = core_models.EntityCategory.objects.get(
             graph_id=graph_id, key="Probe"
         )
@@ -322,7 +333,7 @@ async def test_narrowing_a_categorys_trust_takes_derived_values_and_windows_with
     )
 
     @sync_to_async
-    def narrow_and_read():
+    def narrow_and_read() -> tuple[Mapping[str, object], Mapping[str, object]]:
         from tests.support import drawing
 
         graph = core_models.Graph.objects.get(pk=graph_id)
@@ -388,7 +399,9 @@ def test_confidence_takes_the_numeric_operators_only() -> None:
 
 
 @pytest.mark.parametrize("bad", [-0.1, 1.5, "0.9", None])
-def test_a_confidence_bound_is_a_number_in_the_unit_interval(bad) -> None:
+def test_a_confidence_bound_is_a_number_in_the_unit_interval(
+    bad: float | str | None,
+) -> None:
     with pytest.raises(Exception, match="CONFIDENCE"):
         models.CategoryDefinitionInput.model_validate(
             R.definition(
@@ -420,8 +433,8 @@ def test_a_confidence_condition_compiles_to_a_bound_on_the_claims_own_column() -
 
 
 def _entity_graph(
-    table_projector,
-    authenticated_context,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
     name: str,
     definition: dict,
     *,
@@ -457,16 +470,16 @@ def _entity_graph(
     return materialize(
         graph_definition,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name=name,
     )
 
 
 @pytest.mark.django_db(transaction=True)
 def test_a_classification_rule_may_demand_a_confidence(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """`AT_LEAST 0.9` admits the 0.95 classification, excludes the 0.5 one, and
     excludes the one nobody scored: silence is not confidence."""
@@ -490,7 +503,9 @@ def test_a_classification_rule_may_demand_a_confidence(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_unless_group_may_subtract_the_unconfident(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The other idiom: everything counts unless the claimant scored it below
     0.3. A claim with no number is not below anything, so it stays."""
@@ -512,7 +527,9 @@ def test_an_unless_group_may_subtract_the_unconfident(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_existence_rule_reads_the_standings_confidence(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The same bound over `Standing` rows: a confident retraction removes the
     node, a hesitant one is outside the rule and counts for nothing."""
@@ -537,7 +554,9 @@ def test_an_existence_rule_reads_the_standings_confidence(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_property_may_fold_only_confident_measurements(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     graph = _entity_graph(
         table_projector,
@@ -586,7 +605,9 @@ def test_a_property_may_fold_only_confident_measurements(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_relation_rule_may_demand_a_confidence(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     definition = models.GraphDefinitionInput(
@@ -608,9 +629,7 @@ def test_a_relation_rule_may_demand_a_confidence(
     graph = materialize(
         definition,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="confidence-relation",
     )
     org = graph.organization
@@ -627,7 +646,9 @@ def test_a_relation_rule_may_demand_a_confidence(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_classification_rule_bounds_when_the_world_was_seen(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Both claims were *recorded* after the treatment; only the one that says
     the cell was seen before it is admitted. `ASSERTED_AT` could not tell them
@@ -640,7 +661,7 @@ async def test_a_classification_rule_bounds_when_the_world_was_seen(
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         seen_before = claims.mint(
@@ -674,7 +695,9 @@ async def test_a_classification_rule_bounds_when_the_world_was_seen(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_existence_rule_reads_the_standings_own_time(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """The same rule, read against `Standing` rows, compiles OBSERVED_AT to the
     standing's own `at`: a death that took effect before the treatment removes
@@ -688,7 +711,7 @@ async def test_an_existence_rule_reads_the_standings_own_time(
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         died_before = claims.mint(
@@ -726,14 +749,16 @@ async def test_an_existence_rule_reads_the_standings_own_time(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_rule_bounds_when_the_relation_held(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     graph_id = await graphs.graph_with(
         api_schema, simple_api_context, "observed-relation", graphs.TREATMENT_DEFINITION
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         a = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)
@@ -770,7 +795,9 @@ async def test_a_relation_rule_bounds_when_the_relation_held(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_event_rule_bounds_when_the_event_happened(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """The event category's rule governs the event and its participations alike
     (`create_event` stamps both with the event's time): a division after the
@@ -780,7 +807,7 @@ async def test_an_event_rule_bounds_when_the_event_happened(
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         mother = claims.mint(org, "Cell", "peter", observed_at=graphs.BEFORE_TREATMENT)

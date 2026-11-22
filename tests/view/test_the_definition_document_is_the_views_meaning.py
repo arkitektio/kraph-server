@@ -12,6 +12,7 @@ import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+from strawberry.types import ExecutionResult
 
 from api.schema import schema
 from core import models as core_models
@@ -23,24 +24,33 @@ from graph_engine.materialize import (
     compute_properties_hash,
     materialize,
 )
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, reads, rules, writes
+from tests.support.identity import owned_by
 
 
-def _materialize_with_context(definition, engine, context, name=None, description=None):
+def _materialize_with_context(
+    definition: GraphDefinitionInput,
+    engine: TableProjector,
+    context: HttpContext,
+    name: str | None = None,
+    description: str | None = None,
+) -> core_models.Graph:
     request = context.request
     return materialize(
         definition,
         engine,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name=name,
         description=description,
     )
 
 
 def test_materialize_creates_graph(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that materialize creates a Graph instance with correct attributes."""
     graph = _materialize_with_context(
@@ -58,7 +68,10 @@ def test_materialize_creates_graph(
 
 
 def test_materialize_creates_entity_categories(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that materialize creates EntityCategory for each entity definition."""
     graph = _materialize_with_context(
@@ -79,7 +92,10 @@ def test_materialize_creates_entity_categories(
 
 
 def test_materialize_creates_relation_categories(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that materialize creates RelationCategory for each relation definition."""
     graph = _materialize_with_context(
@@ -99,7 +115,10 @@ def test_materialize_creates_relation_categories(
 
 
 def test_materialize_creates_event_categories(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that materialize creates NaturalEventCategory for each event definition."""
     graph = _materialize_with_context(
@@ -118,7 +137,10 @@ def test_materialize_creates_event_categories(
 
 
 def test_materialize_creates_active_schema(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that materialize creates an active GraphSchema."""
     graph = _materialize_with_context(
@@ -136,7 +158,10 @@ def test_materialize_creates_active_schema(
 
 
 def test_entity_category_has_property_definitions(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that EntityCategory stores property definitions correctly."""
     graph = _materialize_with_context(
@@ -161,7 +186,10 @@ def test_entity_category_has_property_definitions(
 
 
 def test_relation_category_has_source_target_definitions(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that RelationCategory stores source/target definitions correctly."""
     graph = _materialize_with_context(
@@ -185,7 +213,10 @@ def test_relation_category_has_source_target_definitions(
 
 
 def test_event_category_has_roles(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that NaturalEventCategory stores source/target roles correctly."""
     graph = _materialize_with_context(
@@ -266,7 +297,10 @@ def test_compute_properties_hash_is_order_independent() -> None:
 
 
 def test_materialize_with_minimal_schema(
-    transactional_db, table_projector, minimal_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    minimal_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test materialize works with a minimal schema (just entities)."""
     graph = _materialize_with_context(
@@ -288,7 +322,10 @@ def test_materialize_with_minimal_schema(
 
 
 def test_get_entity_def_returns_correct_category(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that Graph.get_entity_def returns the correct EntityCategory."""
     graph = _materialize_with_context(
@@ -308,7 +345,10 @@ def test_get_entity_def_returns_correct_category(
 
 
 def test_get_entity_def_raises_for_unknown_key(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Test that Graph.get_entity_def raises an error for unknown keys."""
     graph = _materialize_with_context(
@@ -323,7 +363,9 @@ def test_get_entity_def_raises_for_unknown_key(
 
 
 def test_an_extrinsic_event_materializes_as_a_protocol_event_category(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """`EventDefinitionInput.kind` decides the category kind. It used to be read
     by nothing, so every event became a natural event category."""
@@ -372,13 +414,15 @@ CREATE_GRAPH = """
 """
 
 
-async def _claimed_cells(api_schema, ctx, literal_graph) -> tuple[str, str]:
+async def _claimed_cells(
+    api_schema: kante.Schema, ctx: HttpContext, literal_graph: core_models.Graph
+) -> tuple[str, str]:
     """Two Cells, one claimed by peter, one by karl."""
     c1 = await writes.create_entity(api_schema, ctx, "Cell")
     c2 = await writes.create_entity(api_schema, ctx, "Cell")
 
     @sync_to_async
-    def annotate():
+    def annotate() -> None:
         cell = core_models.Category.objects.get(graph=literal_graph, key="Cell")
         claims.classify(literal_graph, c1, cell, "peter")
         claims.classify(literal_graph, c2, cell, "karl")
@@ -393,7 +437,7 @@ async def test_create_with_a_definition_backfills_the_admitted_history(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     literal_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     peters, _ = await _claimed_cells(api_schema, simple_api_context, literal_graph)
 
@@ -403,6 +447,7 @@ async def test_create_with_a_definition_backfills_the_admitted_history(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
     created = await api_schema.execute(
@@ -420,12 +465,13 @@ async def test_create_with_a_definition_backfills_the_admitted_history(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     assert {"field": "WORD", "operator": "IS", "value": "Cell"} in created.data[
         "createEntityCategory"
     ]["definition"]["rules"][0]["when"], "the meaning reads back from the same mutation"
 
     @sync_to_async
-    def drawn():
+    def drawn() -> list[str]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         return drawing.refs_with_label(graph, "PetersCells")
 
@@ -440,7 +486,7 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     literal_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     peters, karls = await _claimed_cells(api_schema, simple_api_context, literal_graph)
 
@@ -450,6 +496,7 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(
         context_value=simple_api_context,
     )
     assert made.errors is None
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
     created = await api_schema.execute(
         CREATE_CATEGORY,
@@ -466,6 +513,7 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     category_id = created.data["createEntityCategory"]["id"]
 
     @sync_to_async
@@ -489,12 +537,13 @@ async def test_updating_a_definition_moves_membership_and_writes_no_evidence(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     assert {"field": "SUBJECT", "operator": "IS", "value": "karl"} in updated.data[
         "updateEntityCategory"
     ]["definition"]["rules"][0]["when"]
 
     @sync_to_async
-    def drawn():
+    def drawn() -> list[str]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         return drawing.refs_with_label(graph, "TheCells")
 
@@ -512,16 +561,17 @@ async def test_malformed_definitions_are_refused_by_name(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     literal_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     made = await api_schema.execute(
         CREATE_GRAPH,
         variable_values={"input": {"name": "refusals"}},
         context_value=simple_api_context,
     )
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
-    async def attempt(definition):
+    async def attempt(definition: dict[str, object]) -> ExecutionResult:
         return await api_schema.execute(
             CREATE_CATEGORY,
             variable_values={
@@ -560,7 +610,7 @@ async def test_a_graph_definition_document_carries_meaning(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     literal_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The whole view — words *and* what they mean — arrives as one schema.
 
@@ -597,10 +647,11 @@ async def test_a_graph_definition_document_carries_meaning(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
     @sync_to_async
-    def drawn():
+    def drawn() -> list[str]:
         return drawing.refs_with_label(
             core_models.Graph.objects.get(pk=graph_id), "PetersCell"
         )
@@ -679,6 +730,7 @@ async def test_materializing_a_graph_puts_its_words_in_the_vocabulary(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     listed = {(row["kind"], row["key"]) for row in result.data["terms"]}
     assert ("ENTITY", "AIS") in listed, (
         "The bio schema declares an AIS entity, so the organization knows the word"

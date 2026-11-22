@@ -19,7 +19,7 @@ async def test_list_entities_filtered_by_property_with_supporting_evidence(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     entity_category = await test_graph.aget_entity_def("AIS")
 
     create_entity_mutation = """
@@ -100,7 +100,7 @@ async def test_list_structures_with_filters_ordering_and_pagination(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     structure_kind = await claims.ensure_kind(test_graph)
 
     create_structure_mutation = """
@@ -178,7 +178,9 @@ async def test_list_structures_with_filters_ordering_and_pagination(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_claim_lists_order_by_the_logs_own_order(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     first = await writes.create_entity(api_schema, simple_api_context, "AIS")
     second = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -189,6 +191,7 @@ async def test_claim_lists_order_by_the_logs_own_order(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     ids = [row["id"] for row in read.data["nodes"]]
     assert ids.index(second) < ids.index(first), (
         "the later act comes first under seq DESC"
@@ -217,7 +220,9 @@ def test_the_page_window_is_clamped() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_limit_above_the_ceiling_is_not_an_error(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
@@ -230,4 +235,5 @@ async def test_a_limit_above_the_ceiling_is_not_an_error(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert 1 <= len(result.data["nodes"]) <= 1000

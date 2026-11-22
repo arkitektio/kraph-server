@@ -46,7 +46,6 @@ correct for free when that is fixed, instead of having to be fixed twice.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
 
 from core import models as core_models
 from evidence import models as evidence_models
@@ -86,7 +85,7 @@ class EdgeDrawing:
     edge: retrieved.RetrievedEdge
 
 
-Drawing = Union[NodeDrawing, EdgeDrawing]
+Drawing = NodeDrawing | EdgeDrawing
 
 
 @dataclass(frozen=True)

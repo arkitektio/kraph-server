@@ -9,6 +9,7 @@ import asyncio
 import json
 import threading
 import time
+from collections.abc import Callable, Iterator
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import kante
@@ -18,6 +19,7 @@ from asgiref.sync import sync_to_async
 from authentikate.models import Organization, User
 from joserfc.jwk import OKPKey
 from kante.context import HttpContext
+from pytest_django.fixtures import SettingsWrapper
 
 from projects import models as project_models
 from tests.support import writes
@@ -47,7 +49,7 @@ class _Intake:
         intake = self
 
         class Handler(BaseHTTPRequestHandler):
-            def do_POST(self):  # noqa: N802
+            def do_POST(self) -> None:  # noqa: N802
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 intake.received.append(
                     {
@@ -60,7 +62,7 @@ class _Intake:
                 self.send_response(202)
                 self.end_headers()
 
-            def log_message(self, *args):
+            def log_message(self, format: str, *args: object) -> None:
                 pass
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -75,7 +77,7 @@ class _Intake:
             and (kind is None or r["body"]["kind"] == kind)
         ]
 
-    def until(self, predicate, timeout: float = 10) -> None:
+    def until(self, predicate: Callable[[], object], timeout: float = 10) -> None:
         deadline = time.monotonic() + timeout
         while not predicate() and time.monotonic() < deadline:
             time.sleep(0.05)
@@ -85,7 +87,7 @@ class _Intake:
 
 
 @pytest.fixture
-def intake(settings):
+def intake(settings: SettingsWrapper) -> Iterator[_Intake]:
     server = _Intake()
     settings.REKUEST_SERVICE = {"REKUEST_URL": server.url, "SERVICE": "kraph"}
     settings.INSTANCE = INSTANCE
@@ -95,7 +97,7 @@ def intake(settings):
 
 
 async def _run(
-    schema: kante.Schema, context: HttpContext, document: str, **variables
+    schema: kante.Schema, context: HttpContext, document: str, **variables: object
 ) -> dict:
     result = await schema.execute(
         document, variable_values=variables, context_value=context
@@ -104,7 +106,7 @@ async def _run(
     return result.data
 
 
-async def _item(schema, context, **extra) -> dict:
+async def _item(schema: kante.Schema, context: HttpContext, **extra: object) -> dict:
     project = await _run(
         schema, context, writes.CREATE_PROJECT, input={"name": "Round"}
     )
@@ -128,7 +130,7 @@ async def _item(schema, context, **extra) -> dict:
 
 
 async def test_putting_objects_on_an_item_signals_each_as_created(
-    api_schema, api_context, intake
+    api_schema: kante.Schema, api_context: HttpContext, intake: _Intake
 ) -> None:
     item = await _item(api_schema, api_context, structures=IMAGES)
 
@@ -164,7 +166,7 @@ async def test_putting_objects_on_an_item_signals_each_as_created(
 
 
 async def test_ticking_the_last_object_signals_the_object_and_the_finished_item(
-    api_schema, api_context, intake
+    api_schema: kante.Schema, api_context: HttpContext, intake: _Intake
 ) -> None:
     item = await _item(api_schema, api_context, structures=IMAGES[:2])
     for structure in item["structures"]:
@@ -203,7 +205,7 @@ async def test_ticking_the_last_object_signals_the_object_and_the_finished_item(
 
 
 async def test_a_bulk_tick_signals_every_object(
-    api_schema, api_context, intake
+    api_schema: kante.Schema, api_context: HttpContext, intake: _Intake
 ) -> None:
     item = await _item(api_schema, api_context, structures=IMAGES)
     await _run(
@@ -234,7 +236,10 @@ async def test_a_bulk_tick_signals_every_object(
 
 
 async def test_a_refused_write_signals_nothing(
-    api_schema, api_context, intake, other_organization: Organization
+    api_schema: kante.Schema,
+    api_context: HttpContext,
+    intake: _Intake,
+    other_organization: Organization,
 ) -> None:
     item = await _item(api_schema, api_context, structures=IMAGES[:1])
     intake.until(lambda: intake.bodies("@kraph/todoitem", "CREATED"))
@@ -278,7 +283,7 @@ async def test_a_refused_write_signals_nothing(
 
 
 async def test_touching_a_finished_item_does_not_tell_its_triggers_again(
-    api_schema, api_context, intake
+    api_schema: kante.Schema, api_context: HttpContext, intake: _Intake
 ) -> None:
     """Renamed, rescheduled or dragged within Done: nothing a trigger tests changed, so nothing is sent."""
     item = await _item(api_schema, api_context, structures=IMAGES[:1])

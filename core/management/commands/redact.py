@@ -27,8 +27,10 @@ so nothing breaks, and "somebody claimed this and later withdrew it" remains
 answerable after the thing itself has left.
 """
 
+from typing import Any
+
 from authentikate.models import Organization
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import connection, transaction
 
 from api.extensions.projection import current_or_default
@@ -43,7 +45,7 @@ class Command(BaseCommand):
 
     help = "Permanently destroy evidence. Prefer the archive mutations; this is for data that must not exist."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument(
             "--organization",
@@ -71,7 +73,7 @@ class Command(BaseCommand):
             help="Skip the confirmation prompt. Required for non-interactive use.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Erase the named target."""
         if bool(options["structure"]) == bool(options["entity"]):
             raise CommandError("Name exactly one of --structure or --entity.")
@@ -126,7 +128,7 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("destroyed"))
         self._reproject(plan["graphs"])
 
-    def _plan_structure(self, organization, structure_id: str) -> dict:
+    def _plan_structure(self, organization: Organization, structure_id: str) -> dict:
         structure = (
             evidence_models.Structure.objects.for_organization(organization)
             .filter(pk=structure_id)
@@ -171,7 +173,7 @@ class Command(BaseCommand):
             "graphs": self._graphs_for(organization, refs),
         }
 
-    def _plan_entity(self, organization, ref: str) -> dict:
+    def _plan_entity(self, organization: Organization, ref: str) -> dict:
         node = (
             evidence_models.Instance.objects.for_organization(organization)
             .filter(id=ref)
@@ -217,7 +219,9 @@ class Command(BaseCommand):
             "graphs": self._graphs_for(organization, [ref]),
         }
 
-    def _graphs_for(self, organization, refs) -> list[models.Graph]:
+    def _graphs_for(
+        self, organization: Organization, refs: list[str]
+    ) -> list[models.Graph]:
         """The projections that will be wrong until they are rebuilt.
 
         Asked of the evidence base rather than read off the front of a ref: refs

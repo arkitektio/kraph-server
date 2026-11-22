@@ -11,6 +11,7 @@ import uuid
 import kante
 import pytest
 from asgiref.sync import sync_to_async
+from authentikate.models import Organization
 from kante.context import HttpContext
 
 from core import models as core_models
@@ -30,7 +31,7 @@ ENTITY = """
 
 
 async def _node(
-    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph
+    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph: core_models.Graph
 ) -> dict:
     result = await api_schema.execute(
         ENTITY,
@@ -38,6 +39,7 @@ async def _node(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["node"]
 
 
@@ -69,11 +71,12 @@ async def _measured_ais(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     return created.data["assertEntityExists"]["instance"]["id"]
 
 
 @sync_to_async
-def _burn_the_state(organization) -> int:
+def _burn_the_state(organization: Organization) -> int:
     """Delete every state vector in the organization. Returns how many went.
 
     Legal, unlike deleting a `Metric`: the append-only trigger covers the six log

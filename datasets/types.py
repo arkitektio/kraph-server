@@ -4,13 +4,15 @@ Every type is fenced to the request's organization, the way the todo types are:
 strawberry-django applies `get_queryset` to root lists, nested lists and pk lookups.
 """
 
+from collections.abc import Callable
 from datetime import datetime
-from typing import cast
+from typing import Any, TypeVar, cast
 
 import kante
 import strawberry
 import strawberry_django
 from arkitekt_datalayer.types import BigFileStore
+from django.db.models import Model as DjangoModel
 from django.db.models import Q, QuerySet
 from strawberry import auto
 from strawberry.scalars import JSON
@@ -19,12 +21,20 @@ from api.context import get_active_organization
 from api.inputs import DescriptorConstraintInput
 from datasets import models
 
+#: A GraphQL type class, handed through `_fenced` unchanged.
+TypeClass = TypeVar("TypeClass", bound=type)
 
-def _fenced(path: str):
+
+def _fenced(path: str) -> Callable[[TypeClass], TypeClass]:
     """Scope a type's rows to the active organization, reached through ``path``."""
 
-    def decorate(cls):
-        def get_queryset(cls_, queryset, info, **kwargs):
+    def decorate(cls: TypeClass) -> TypeClass:
+        def get_queryset(
+            cls_: type,
+            queryset: QuerySet[DjangoModel],
+            info: kante.Info,
+            **kwargs: Any,
+        ) -> QuerySet[DjangoModel]:
             return queryset.filter(**{path: get_active_organization(info)})
 
         cls.get_queryset = classmethod(get_queryset)

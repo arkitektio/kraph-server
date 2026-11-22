@@ -9,18 +9,23 @@ bare `django_field`s over managers that did not scope, answerable across
 tenants by guessing a sequential primary key.
 """
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
-from authentikate.models import Membership, User
+from authentikate.models import Membership, Organization, User
 from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
+from tests.support.identity import owned_by
 
 
 @pytest.fixture
-def foreign_graph(transactional_db, other_organization) -> core_models.Graph:
+def foreign_graph(
+    transactional_db: None, other_organization: Organization
+) -> core_models.Graph:
     """A graph belonging to that other organization.
 
     Owned by its own user and membership, so nothing about it is reachable from
@@ -46,8 +51,10 @@ def foreign_graph(transactional_db, other_organization) -> core_models.Graph:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_graphs_does_not_list_another_tenants_graph(
-    api_schema, simple_api_context, foreign_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    foreign_graph: core_models.Graph,
+) -> None:
     """The list form is scoped."""
     result = await api_schema.execute(
         "query { graphs { id name } }",
@@ -55,6 +62,7 @@ async def test_graphs_does_not_list_another_tenants_graph(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     ids = [g["id"] for g in result.data["graphs"]]
     assert str(foreign_graph.pk) not in ids, (
         "`graphs` handed back a graph belonging to another organization"
@@ -64,8 +72,10 @@ async def test_graphs_does_not_list_another_tenants_graph(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_graph_by_id_refuses_another_tenants_graph(
-    api_schema, simple_api_context, foreign_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    foreign_graph: core_models.Graph,
+) -> None:
     """The singular form is scoped too — the pk is a sequential integer, so guessing it is trivial.
 
     `get_queryset` is applied by strawberry-django to pk lookups as well as root
@@ -85,8 +95,11 @@ async def test_graph_by_id_refuses_another_tenants_graph(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_entity_categories_does_not_list_another_tenants_category(
-    api_schema, simple_api_context, foreign_graph, test_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    foreign_graph: core_models.Graph,
+    test_graph: core_models.Graph,
+) -> None:
     """Category types are `kind_type`s, so their fence rides on `_kind_dispatch`.
 
     That override filtered on `kind` alone — it narrowed a shared table to one
@@ -105,6 +118,7 @@ async def test_entity_categories_does_not_list_another_tenants_category(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     ids = [c["id"] for c in result.data["entityCategories"]]
     assert str(foreign.pk) not in ids, (
         "`entityCategories` handed back a category from another organization"
@@ -114,8 +128,10 @@ async def test_entity_categories_does_not_list_another_tenants_category(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_callers_own_graph_is_still_visible(
-    api_schema, simple_api_context, test_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
     """The fence must not be a blanket refusal — the caller's own rows still resolve."""
     result = await api_schema.execute(
         "query { graphs { id } }",
@@ -123,6 +139,7 @@ async def test_the_callers_own_graph_is_still_visible(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     ids = [g["id"] for g in result.data["graphs"]]
     assert str(test_graph.pk) in ids, "The fence hid the caller's own graph"
 
@@ -130,8 +147,10 @@ async def test_the_callers_own_graph_is_still_visible(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_saved_queries_do_not_list_another_tenants_row(
-    api_schema, simple_api_context, foreign_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    foreign_graph: core_models.Graph,
+) -> None:
     """The twelve saved-query families are proxies over `GraphQuery`/`NodeQuery`/`EdgeQuery`.
 
     Worth its own test because the fence looks these up by model name, and a proxy
@@ -154,6 +173,7 @@ async def test_saved_queries_do_not_list_another_tenants_row(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     ids = [q["id"] for q in result.data["graphTableQueries"]]
     assert str(foreign.pk) not in ids, (
         "`graphTableQueries` handed back a saved query from another organization"
@@ -213,15 +233,16 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def edge_graph(
-    transactional_db, table_projector, edge_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    edge_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="edge_graph",
     )
 

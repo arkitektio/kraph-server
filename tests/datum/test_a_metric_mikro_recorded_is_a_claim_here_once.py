@@ -9,11 +9,14 @@ corrects; an entry that can never be applied is poison, not skipped.
 
 import uuid
 
+import kante
 import pytest
 from arkitekt_service.feed.consumer import Poison
 from asgiref.sync import sync_to_async
 from authentikate.models import Client, Organization, User
+from kante.context import HttpContext
 
+from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from tests.support import feeds, writes
@@ -248,7 +251,9 @@ NODE_PROPERTIES = """
 
 @pytest.mark.asyncio
 async def test_a_metric_from_mikro_moves_the_value_it_informs(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A datum an entity is evidence-backed by gets a metric in mikro: the entity's derived value folds it in, and is redrawn."""
     created = await api_schema.execute(
@@ -274,6 +279,7 @@ async def test_a_metric_from_mikro_moves_the_value_it_informs(
         context_value=simple_api_context,
     )
     assert created.errors is None, created.errors
+    assert created.data is not None
     entity = created.data["assertEntityExists"]["instance"]["id"]
 
     await sync_to_async(feeds.apply)(
@@ -293,4 +299,5 @@ async def test_a_metric_from_mikro_moves_the_value_it_informs(
         context_value=simple_api_context,
     )
     assert read.errors is None, read.errors
+    assert read.data is not None
     assert read.data["node"]["properties"]["avg_length"] == pytest.approx(20.0)

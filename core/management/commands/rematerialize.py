@@ -28,7 +28,9 @@ that decide how this file reads:
   and a `--category` is where this command wins; a whole-estate sweep is not.
 """
 
-from django.core.management.base import BaseCommand, CommandError
+from typing import Any
+
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from api.extensions.projection import current_or_default
 from core import models
@@ -42,7 +44,7 @@ class Command(BaseCommand):
 
     help = "Redraw the vertices of node categories whose derivation rules have changed."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument(
             "--graph", help="Name or id of the graph to work on. Omit with --all."
@@ -63,7 +65,7 @@ class Command(BaseCommand):
             help="Report what would be redrawn without touching the projection.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Redraw the selected categories."""
         if not options["graph"] and not options["all"]:
             raise CommandError("Name a graph with --graph, or pass --all.")
@@ -107,12 +109,14 @@ class Command(BaseCommand):
             if not options["dry_run"] and not options["category"]:
                 watermark.record_schema_hash(graph, watermark.active_schema_hash(graph))
 
-    def _select_graphs(self, options) -> list[models.Graph]:
+    def _select_graphs(self, options: dict[str, Any]) -> list[models.Graph]:
         if options["all"]:
             return list(models.Graph.objects.all())
         return [_graphs.select_graph(str(options["graph"]))]
 
-    def _select_categories(self, graph: models.Graph, options) -> list[models.Category]:
+    def _select_categories(
+        self, graph: models.Graph, options: dict[str, Any]
+    ) -> list[models.Category]:
         """The node categories of one graph.
 
         Node categories only. An edge carries `category_id` and

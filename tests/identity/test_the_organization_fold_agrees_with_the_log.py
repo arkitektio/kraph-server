@@ -7,16 +7,20 @@ split `evidence.state` has, and the one that once slipped there.
 """
 
 import uuid
+from collections.abc import Callable
 
 import pytest
 from authentikate.models import Organization
+from pytest_django import DjangoAssertNumQueries
 
 from evidence import identity, writer
 from evidence import models as evidence_models
 
 
 @pytest.fixture
-def node_factory(organization: Organization, assertion: evidence_models.Assertion):
+def node_factory(
+    organization: Organization, assertion: evidence_models.Assertion
+) -> Callable[[], str]:
     """Fresh entity instances, the way an observation mints them."""
     term = writer.ensure_term(organization, "ENTITY", "AIS")
 
@@ -51,7 +55,7 @@ def _same(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_unmerged_node_is_its_own_component(
-    organization: Organization, node_factory
+    organization: Organization, node_factory: Callable[[], str]
 ) -> None:
     """A component of one has no row, and must still answer.
 
@@ -69,7 +73,9 @@ def test_an_unmerged_node_is_its_own_component(
 
 @pytest.mark.django_db(transaction=True)
 def test_merging_two_instances_makes_one_component(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """ "This is AIS 6": a fresh instance, then a claim that it is one already known."""
     first, second = node_factory(), node_factory()
@@ -88,7 +94,9 @@ def test_merging_two_instances_makes_one_component(
 
 @pytest.mark.django_db(transaction=True)
 def test_the_representative_is_the_lowest_uuid_not_the_first_asserted(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """Identity must not be an accident of arrival order.
 
@@ -104,7 +112,9 @@ def test_the_representative_is_the_lowest_uuid_not_the_first_asserted(
 
 @pytest.mark.django_db(transaction=True)
 def test_sameness_is_transitive(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """A~B and B~C means A~C, without anybody claiming A~C."""
     a, b, c = node_factory(), node_factory(), node_factory()
@@ -116,7 +126,9 @@ def test_sameness_is_transitive(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_fold_row_can_say_what_it_is(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """`str(row)` read `node_id`, a field migration 0008 renamed, and raised."""
     a, b = node_factory(), node_factory()
@@ -128,7 +140,9 @@ def test_a_fold_row_can_say_what_it_is(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_repeated_claim_changes_nothing(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """Agreement is counted in the log, not in the fold.
 
@@ -151,7 +165,9 @@ def test_a_repeated_claim_changes_nothing(
 
 @pytest.mark.django_db(transaction=True)
 def test_retracting_a_bridge_splits_the_component(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """Union-find cannot un-union, so the component is rebuilt instead.
 
@@ -177,7 +193,9 @@ def test_retracting_a_bridge_splits_the_component(
 
 @pytest.mark.django_db(transaction=True)
 def test_retracting_a_redundant_claim_splits_nothing(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """The rebuild is what tells a bridge from a redundant edge.
 
@@ -199,7 +217,9 @@ def test_retracting_a_redundant_claim_splits_nothing(
 
 @pytest.mark.django_db(transaction=True)
 def test_the_rebuild_agrees_with_incremental_maintenance(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """The correctness backstop, and the reason `refold` exists separately.
 
@@ -232,7 +252,9 @@ def test_the_rebuild_agrees_with_incremental_maintenance(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_retracted_claim_does_not_survive_a_refold(
-    organization: Organization, assertion, node_factory
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """`refold` folds standing claims only.
 
@@ -252,8 +274,8 @@ def test_a_retracted_claim_does_not_survive_a_refold(
 def test_components_are_scoped_to_their_organization(
     organization: Organization,
     other_organization: Organization,
-    assertion,
-    node_factory,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
 ) -> None:
     """A fold over evidence inherits evidence's tenancy."""
     a, b = node_factory(), node_factory()
@@ -264,7 +286,10 @@ def test_components_are_scoped_to_their_organization(
 
 @pytest.mark.django_db(transaction=True)
 def test_asking_about_many_nodes_costs_two_queries(
-    organization: Organization, assertion, node_factory, django_assert_num_queries
+    organization: Organization,
+    assertion: evidence_models.Assertion,
+    node_factory: Callable[[], str],
+    django_assert_num_queries: DjangoAssertNumQueries,
 ) -> None:
     """The point of the table: a page of subjects is not a page of queries."""
     pairs = [(node_factory(), node_factory()) for _ in range(5)]

@@ -12,6 +12,8 @@ from typing import Any
 
 from django.db import connection
 
+from core import models as core_models
+
 
 def schema_exists(name: str) -> bool:
     with connection.cursor() as cursor:
@@ -36,7 +38,7 @@ def property_graph_labels(schema: str) -> set[str]:
 
 
 def graph_table(
-    graph: Any, body: str, params: list[Any] | None = None
+    graph: core_models.Graph, body: str, params: list[Any] | None = None
 ) -> list[tuple[Any, ...]]:
     """Run one GRAPH_TABLE query against a graph's namespace and return its rows.
 

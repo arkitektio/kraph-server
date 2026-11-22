@@ -33,17 +33,43 @@ Three things below look like they could be parameters and are deliberately not:
 """
 
 from collections.abc import Callable
+from typing import Protocol, TypeVar
 
 import strawberry
+from kante.types import Info
 
 from api import context
+from core import models
+from core.managers import CategoryManager
+from graph_engine.input_models import UpdateDefinitionInput
 
 from .._scoped import schema_graph, schema_scoped
 from ._guards import delete_or_explain, refuse_bad_color
 from ._rematerialize import fingerprint, rematerialize_if_moved
 
 
-def _patch_fields(item, model, manager) -> bool:
+class CategoryDeclaration(Protocol):
+    """What every `Create*CategoryInput` carries: the word and the view it goes in."""
+
+    key: str
+    graph: str
+
+
+class CategoryReference(Protocol):
+    """What every `Delete*CategoryInput` carries: the category's id."""
+
+    id: str
+
+
+DeclarationT = TypeVar("DeclarationT", bound=CategoryDeclaration)
+UpdateT = TypeVar("UpdateT", bound=UpdateDefinitionInput)
+
+
+def _patch_fields(
+    item: models.Category,
+    model: UpdateDefinitionInput,
+    manager: CategoryManager[models.Category],
+) -> bool:
     """The all-optional patch every category update but entity's applies.
 
     `or item.x` throughout: these inputs cannot distinguish "not provided" from
@@ -71,13 +97,20 @@ def _patch_fields(item, model, manager) -> bool:
     # primitive, or left alone. The input model refuses the first two together.
     if getattr(model, "clear_definition", False):
         item.definition = {}
-    elif getattr(model, "definition", None) is not None:
-        item.definition = model.definition.to_stored()
+    elif (definition := getattr(model, "definition", None)) is not None:
+        item.definition = definition.to_stored()
 
     return False
 
 
-def create_category(info, model, proxy, creator: Callable, *, node: bool):
+def create_category(
+    info: Info,
+    model: DeclarationT,
+    proxy: type[models.Category],
+    creator: Callable[[models.Graph, DeclarationT], models.Category],
+    *,
+    node: bool,
+) -> models.Category:
     """Declare a category, then settle what the declaration owes the projection.
 
     `creator` is the manager method that writes the row — the half that does not
@@ -116,15 +149,16 @@ def create_category(info, model, proxy, creator: Callable, *, node: bool):
 
 
 def update_category(
-    info,
-    model,
-    proxy,
+    info: Info,
+    model: UpdateT,
+    proxy: type[models.Category],
     *,
     what: str,
     node: bool,
     rebuild_on_rule_change: bool,
-    patch: Callable | None = None,
-):
+    patch: Callable[[models.Category, UpdateT, CategoryManager[models.Category]], bool]
+    | None = None,
+) -> models.Category:
     """Patch a category, then settle what the change owes the projection."""
     item = schema_scoped(info, proxy, model.id, what=what)
 
@@ -159,7 +193,14 @@ def update_category(
     return item
 
 
-def delete_category(info, model, proxy, *, what: str, instead: str) -> strawberry.ID:
+def delete_category(
+    info: Info,
+    model: CategoryReference,
+    proxy: type[models.Category],
+    *,
+    what: str,
+    instead: str,
+) -> strawberry.ID:
     """Delete a category, or explain which evidence is holding it up."""
     item = schema_scoped(info, proxy, model.id, what=what)
     delete_or_explain(item, what=f"{what} '{item.key}'", instead=instead)

@@ -10,6 +10,7 @@ something that may be drawn nowhere; two of its fields could not answer.
 """
 
 import uuid
+from typing import Never
 
 import kante
 import pytest
@@ -20,6 +21,7 @@ from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine import models as graph_engine_models
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
 from graph_engine.retrieved import RetrievedNode
 from tests.support import drawing, graphs, reads, rules, writes
 
@@ -82,6 +84,7 @@ async def test_the_payload_answers_about_the_claim(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
     claim = payload["instance"]
 
@@ -119,7 +122,7 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """An admitted-but-undrawn node still names its view and its categories (RFC 0025).
 
@@ -153,6 +156,7 @@ async def test_reading_an_undrawn_claim_as_an_entity_does_not_fail(
     )
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     entity = read.data["entity"]
     assert entity["id"] == entity_id
     assert entity["graph"]["id"] == str(test_graph.id), "a Node always names its view"
@@ -197,6 +201,7 @@ async def test_a_links_endpoints_resolve_by_kind(
     )
 
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     link = created.data["assertRelationExists"]["link"]
 
     assert link["kind"] == "RELATION"
@@ -232,6 +237,7 @@ async def test_a_classification_targets_a_word(
         context_value=simple_api_context,
     )
     assert classified.errors is None, f"GraphQL errors: {classified.errors}"
+    assert classified.data is not None
     assert classified.data["classifyNodes"]["instances"][0]["kind"] == "ENTITY", (
         "A batch reports each claim's own kind"
     )
@@ -259,6 +265,7 @@ async def test_a_classification_targets_a_word(
     )
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     assert read.data["link"]["kind"] == "CLASSIFIES"
     assert read.data["link"]["target"]["key"] == "AIS", (
         "The target is the word, not a node"
@@ -310,6 +317,7 @@ async def test_a_link_claim_reports_its_drawing_and_its_standing(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     link = created.data["assertRelationExists"]["link"]
 
     assert link["standings"] == [], "Nobody has disputed the claim"
@@ -324,6 +332,7 @@ async def test_a_link_claim_reports_its_drawing_and_its_standing(
         context_value=simple_api_context,
     )
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
+    assert retracted.data is not None
     withdrawn = retracted.data["retractLinks"]["links"][0]
 
     assert withdrawn["kind"] == "RELATION"
@@ -335,12 +344,15 @@ async def test_a_link_claim_reports_its_drawing_and_its_standing(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_drawings_report_the_rules_category_not_the_vertex_stamp(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def stamp_and_read():
+    def stamp_and_read() -> tuple[list[tuple[int, int]], int]:
         # Corrupt the cache on purpose: the payload must not read it back. The
         # composite FK (RFC 0006) refuses an invented id, so the worst corruption
         # still expressible is a *declared but wrong* category of the same graph —
@@ -370,7 +382,7 @@ async def test_drawings_report_the_rules_category_not_the_vertex_stamp(
 
 @pytest.mark.django_db(transaction=True)
 def test_two_undrawn_nodes_are_two_objects(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     from evidence import writer
 
@@ -403,7 +415,9 @@ def test_two_undrawn_nodes_are_two_objects(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_write_reports_the_individuals_drawing(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Asserting an entity `sameAs` an existing one returns the drawing of the individual, not of the observation alone."""
     a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"][
@@ -421,6 +435,7 @@ async def test_the_write_reports_the_individuals_drawing(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
     b = payload["instance"]["id"]
     (drawn,) = payload["drawings"]
@@ -444,7 +459,7 @@ async def test_a_write_reports_one_drawing_per_category(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """`drawings` lists the node once per (view, category) — that is what the
     field promises, and now it can be more than one entry for one view."""
@@ -467,6 +482,7 @@ async def test_a_write_reports_one_drawing_per_category(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     drawings = created.data["assertEntityExists"]["drawings"]
     assert {entry["category"]["id"] for entry in drawings} == category_ids
     assert all(
@@ -481,6 +497,7 @@ async def test_a_write_reports_one_drawing_per_category(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     entity = read.data["entity"]
     assert entity["drawnLabels"] == ["ais", "excitatory"]
     assert entity["label"] == "ais", "the first label, for a client that shows one"
@@ -494,7 +511,7 @@ async def test_create_entity(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     """Create an entity through the GraphQL createEntity mutation."""
     entity_category = await test_graph.aget_entity_def("AIS")
 
@@ -566,6 +583,7 @@ async def test_a_claim_no_view_declares_is_recorded_and_undrawn(
     assert result.errors is None, (
         f"A claim under an undeclared word must succeed: {result.errors}"
     )
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
 
     assert payload["instance"]["id"], (
@@ -614,6 +632,7 @@ async def test_a_claim_two_views_declare_reports_both_drawings(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
 
     drawn_in = {drawing["graph"]["id"] for drawing in payload["drawings"]}
@@ -651,7 +670,7 @@ async def test_a_participation_reports_the_view_that_drew_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
     is_input: bool,
 ) -> None:
     """Both sides of a participation must be findable, and this is the test that says so.
@@ -699,6 +718,7 @@ async def test_a_participation_reports_the_view_that_drew_it(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertParticipation"]
 
     assert payload["link"]["id"], "The claim has an identity"
@@ -732,7 +752,11 @@ async def test_a_participation_reports_the_view_that_drew_it(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_write_whose_drawing_fails_still_returns_the_act(
-    api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch, caplog
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     """A failed drawing is a pending act, not a failed mutation.
 
@@ -749,7 +773,7 @@ async def test_a_write_whose_drawing_fails_still_returns_the_act(
 
     from graph_engine import projector
 
-    def down(*args, **kwargs):
+    def down(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("projector down")
 
     monkeypatch.setattr(projector, "reproject_refs", down)
@@ -762,6 +786,7 @@ async def test_a_write_whose_drawing_fails_still_returns_the_act(
     assert result.errors is None, (
         f"a durable act is not a failed mutation: {result.errors}"
     )
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
     assert payload["assertion"]["id"] and payload["instance"]["id"]
     assert payload["drawings"] == [], "nothing was drawn"
@@ -778,6 +803,7 @@ async def test_a_write_whose_drawing_fails_still_returns_the_act(
         context_value=simple_api_context,
     )
     assert position.errors is None, f"GraphQL errors: {position.errors}"
+    assert position.data is not None
     assert position.data["graph"]["projection"]["pending"] == 1
     assert position.data["graph"]["projection"]["lag"] >= 1
 
@@ -788,6 +814,7 @@ async def test_a_write_whose_drawing_fails_still_returns_the_act(
         context_value=simple_api_context,
     )
     assert healthy.errors is None, f"GraphQL errors: {healthy.errors}"
+    assert healthy.data is not None
     assert healthy.data["assertEntityExists"]["pending"] is False
     assert healthy.data["assertEntityExists"]["drawings"], (
         "the projector is back, so the drawing completes in the request"

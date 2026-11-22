@@ -14,7 +14,9 @@ event kinds rather than as the copy-paste slip it was. Both go through one creat
 now; this module is what holds them together.
 """
 
+import kante
 import pytest
+from kante.context import HttpContext
 
 from core import models as core_models
 from tests.support import graphs, rules
@@ -35,7 +37,7 @@ CREATE_PROTOCOL_EVENT = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_natural_event_category_keeps_the_rule_it_was_created_with(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """The rule reaches the row, not just the payload."""
     graph_id = await graphs.graph_declaring(
@@ -61,6 +63,7 @@ async def test_a_natural_event_category_keeps_the_rule_it_was_created_with(
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
+    assert made.data is not None
     read_back = made.data["createNaturalEventCategory"]["definition"]["rules"][0][
         "when"
     ]
@@ -79,7 +82,7 @@ async def test_a_natural_event_category_keeps_the_rule_it_was_created_with(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_both_event_kinds_store_their_rule_the_same_way(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """Natural and protocol events differ in what they *are*, not in what a create stores.
 
@@ -129,9 +132,11 @@ async def test_both_event_kinds_store_their_rule_the_same_way(
     )
     assert protocol.errors is None, f"GraphQL errors: {protocol.errors}"
 
+    assert natural.data is not None
     natural_row = await core_models.NaturalEventCategory.objects.aget(
         pk=natural.data["createNaturalEventCategory"]["id"]
     )
+    assert protocol.data is not None
     protocol_row = await core_models.ProtocolEventCategory.objects.aget(
         pk=protocol.data["createProtocolEventCategory"]["id"]
     )

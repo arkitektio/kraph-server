@@ -15,6 +15,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from evidence import identity, panel, writer
 from evidence import models as evidence_models
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, rules, writes
 from tests.support.graphs import BEFORE
 from tests.support.graphs import example_graph as _example_graph
@@ -36,7 +37,9 @@ SCHEMA = {"extensions": {"entities": [{"key": "Cell"}, {"key": "Nucleus"}]}}
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_views_rule_decides_and_reaches_across_categories(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     made = await api_schema.execute(
         CREATE_GRAPH_WITH_RULE,
@@ -62,6 +65,7 @@ async def test_the_views_rule_decides_and_reaches_across_categories(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
     assert (
         made.data["createGraph"]["samenessRule"]["rules"][0]["when"][0]["value"]
@@ -69,7 +73,9 @@ async def test_the_views_rule_decides_and_reaches_across_categories(
     )
 
     @sync_to_async
-    def story():
+    def story() -> tuple[
+        core_models.Graph, str, str, str, list[str], set[str], list[str]
+    ]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         cell, nucleus, other = (
@@ -104,6 +110,7 @@ async def test_the_views_rule_decides_and_reaches_across_categories(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     assert sorted(read.data["node"]["members"]) == sorted([cell, nucleus])
 
     # Widen the rule to everyone: Peter's merge now counts, and the drawing is refolded.
@@ -113,6 +120,7 @@ async def test_the_views_rule_decides_and_reaches_across_categories(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     assert updated.data["updateGraph"]["samenessRule"] is None, (
         "no rules means everyone, read back as null"
     )
@@ -144,6 +152,7 @@ async def test_noticing_later_that_two_instances_are_one(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertSameInstance"]
 
     assert len(payload["links"]) == 1
@@ -244,6 +253,7 @@ async def test_a_structure_cannot_be_claimed_the_same_as_anything(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     structure = created.data["assertStructureExists"]["structure"]["id"]
 
     refused = await api_schema.execute(
@@ -279,8 +289,8 @@ async def test_a_node_cannot_be_claimed_the_same_as_itself(
 async def test_claim_grain_sameness_is_organization_grain(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
-    backend_stack,
+    table_projector: TableProjector,
+    backend_stack: tuple[int, int],
 ) -> None:
     """With no view in scope, the fold is the organization's cached answer.
 
@@ -307,7 +317,7 @@ async def test_claim_grain_sameness_is_organization_grain(
     c = await writes.create_entity(api_schema, simple_api_context, "TrustCell")
 
     @sync_to_async
-    def fold():
+    def fold() -> tuple[list[str], dict[str, list[evidence_models.Link]]]:
         organization = core_models.Graph.objects.get(
             name="trusting-everyone"
         ).organization
@@ -329,13 +339,17 @@ async def test_claim_grain_sameness_is_organization_grain(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Sameness is the view's rule (RFC 0024): this view trusts Peter, so a stranger's merge changes nothing here."""
     graph_id = await _example_graph(api_schema, simple_api_context, "individual-trust")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[
+        tuple[int, list[str]], tuple[int, list[str]], str, str
+    ]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         # Sameness is the view's rule (RFC 0024): this view counts Peter's merges.
         graph.sameness_rule = {
@@ -367,7 +381,9 @@ async def test_a_sameness_the_category_does_not_trust_draws_two_vertices(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_sameness_claim_survives_in_the_log_when_a_view_ignores_it(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The organization-grain cache still folds every standing claim; only the drawing is per view."""
     from evidence import identity
@@ -377,7 +393,7 @@ async def test_a_sameness_claim_survives_in_the_log_when_a_view_ignores_it(
     await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def cached():
+    def cached() -> tuple[int, list[str]]:
         links = (
             evidence_models.Link.objects.for_organization(test_graph.organization)
             .filter(kind=evidence_models.Link.Kind.SAME_AS)
@@ -429,7 +445,9 @@ CURATOR_MERGES = {
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_existence_and_sameness_are_distinct_rules(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """The motivating scenario (RFC 0011, restated by RFC 0024): Peter may
     retract, only the curator may merge — and merging is the view's rule, so
@@ -446,10 +464,13 @@ async def test_existence_and_sameness_are_distinct_rules(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
     @sync_to_async
-    def story():
+    def story() -> tuple[
+        list[str], list[str], list[str], int, int, str, str, str, set[str]
+    ]:
         from evidence import identity, panel
 
         graph = core_models.Graph.objects.get(pk=graph_id)
@@ -461,7 +482,7 @@ async def test_existence_and_sameness_are_distinct_rules(
         b2 = claims.mint(org, "AIS", "peter")
         cell = claims.mint(org, "Cell", "anyone")
 
-        def merge_as(left, right, subject):
+        def merge_as(left: str, right: str, subject: str) -> None:
             from evidence import models as evidence_models
 
             writer.create_link(
@@ -540,7 +561,7 @@ async def test_existence_and_sameness_are_distinct_rules(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_category_may_not_rule_on_sameness(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """KIND SAMENESS in a category definition is refused (RFC 0024)."""
     definition = {

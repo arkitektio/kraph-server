@@ -13,6 +13,7 @@ were none.
 from __future__ import annotations
 
 import pytest
+from authentikate.models import Organization
 from django.db import connection, transaction
 from django.db.utils import IntegrityError
 
@@ -24,7 +25,7 @@ REFUSED = IntegrityError
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_assertion_cannot_be_updated(organization) -> None:
+def test_an_assertion_cannot_be_updated(organization: Organization) -> None:
     """The provenance record is immutable — including through `queryset.update()`.
 
     The ORM-level guard is not enough on its own: `queryset.update()` never calls
@@ -45,7 +46,9 @@ def test_an_assertion_cannot_be_updated(organization) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_claim_cannot_be_deleted(organization, roi_kind) -> None:
+def test_a_claim_cannot_be_deleted(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """Withdrawing a claim is another claim. Removing the record is not an option."""
     minting = writer.create_assertion(organization, subject="minter", app_id="app")
     structure = writer.ensure_structure(
@@ -72,7 +75,9 @@ def test_a_claim_cannot_be_deleted(organization, roi_kind) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_every_log_table_refuses_a_rewrite(
-    organization, roi_kind, length_category
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
 ) -> None:
     """Not just the two most obvious ones.
 
@@ -137,7 +142,9 @@ def test_every_log_table_refuses_a_rewrite(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_projections_stay_mutable(organization, roi_kind) -> None:
+def test_projections_stay_mutable(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """`CurrentStanding` and `State` are folded from the log and must be rewritable.
 
     The guard covers the log, not everything in the app. A projection that could
@@ -168,7 +175,9 @@ def test_projections_stay_mutable(organization, roi_kind) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_escape_hatch_is_explicit_and_transaction_scoped(organization) -> None:
+def test_the_escape_hatch_is_explicit_and_transaction_scoped(
+    organization: Organization,
+) -> None:
     """`redact` can destroy; nothing else inherits the permission.
 
     `SET LOCAL` binds the exemption to one transaction, so an erasure cannot leave
@@ -190,7 +199,9 @@ def test_the_escape_hatch_is_explicit_and_transaction_scoped(organization) -> No
 
 
 @pytest.mark.django_db(transaction=True)
-def test_concurring_claims_are_both_recorded(organization, roi_kind) -> None:
+def test_concurring_claims_are_both_recorded(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """Two annotators retracting the same thing are two claims, not one.
 
     The dedup that used to suppress the second one was not tidiness — it was the
@@ -230,7 +241,7 @@ def test_concurring_claims_are_both_recorded(organization, roi_kind) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_the_migrations_escape_hatch_actually_rewrites_the_log(
-    organization, roi_kind
+    organization: Organization, roi_kind: evidence_models.StructureKind
 ) -> None:
     """`0008`'s data migration rewrites a log table, and this is the only proof it can.
 

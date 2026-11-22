@@ -9,7 +9,10 @@ is restored by the writer (``todos/resolvers.py``): an object ticked without its
 column (the item's counts), bulk writes, a list reassigned.
 """
 
+from typing import Any
+
 from arkitekt_service.service import Service, organization_of
+from arkitekt_service.service.described import Described
 from django.db.models.signals import pre_save
 
 from core import models as core_models
@@ -89,7 +92,9 @@ trained_model = service.structure(
 _BEFORE = "_descriptors_before_save"
 
 
-def _keep_before(sender, instance, raw: bool = False, **_) -> None:
+def _keep_before(
+    sender: type[Described], instance: Described, raw: bool = False, **_: Any
+) -> None:
     if raw or instance.pk is None:
         return
     setattr(
@@ -102,7 +107,7 @@ def _keep_before(sender, instance, raw: bool = False, **_) -> None:
     )
 
 
-def _changed(instance, kind: str) -> bool:
+def _changed(instance: Described, kind: str) -> bool:
     if kind != "UPDATED" or not hasattr(instance, _BEFORE):
         return True
     return getattr(instance, _BEFORE) != instance.stored_descriptors

@@ -6,16 +6,25 @@ organization drops below it; a rebuild that dies after the drop leaves the view 
 about it. `Graph.projection` reports all of it.
 """
 
+from typing import NoReturn
+
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from django.db import transaction
+from health_check.exceptions import HealthCheckException
+from kante.context import HttpContext
+from pytest_django.fixtures import SettingsWrapper
 
 from core import models as core_models
 from evidence import models as evidence_models
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
+from graph_engine.input_models import GraphDefinitionInput
+from graph_engine.projection import TableProjector
 from tests.support import reads, writes
+from tests.support.identity import owned_by
 
 
 def test_cursor_is_a_pure_function_of_three_numbers() -> None:
@@ -44,12 +53,14 @@ def test_cursor_is_a_pure_function_of_three_numbers() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_write_settles_its_outbox_row_and_the_graph_is_caught_up(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def inspect():
+    def inspect() -> tuple[int, watermark.Position]:
         return watermark.pending_count(test_graph.organization), watermark.position(
             test_graph
         )
@@ -64,12 +75,15 @@ async def test_a_write_settles_its_outbox_row_and_the_graph_is_caught_up(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(
-    api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The evidence commits; the drawing does not; the cursor says so for the whole organization."""
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
-    def down(*args, **kwargs):
+    def down(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("projector down")
 
     monkeypatch.setattr(projector, "reproject_refs", down)
@@ -82,12 +96,13 @@ async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(
     assert failed.errors is None, (
         "the act committed and was announced; a failed drawing is not a failed mutation"
     )
+    assert failed.data is not None
     assert failed.data["assertEntityExists"]["pending"] is True, (
         "the payload says the drawing is owed"
     )
 
     @sync_to_async
-    def inspect():
+    def inspect() -> tuple[list[int], watermark.Position, int, int]:
         organization = test_graph.organization
         pending = [
             int(seq)
@@ -115,12 +130,12 @@ async def test_a_projection_failure_leaves_the_row_and_holds_every_cursor(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_one(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    bio_graph_schema,
-    authenticated_context,
+    table_projector: TableProjector,
+    bio_graph_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     from graph_engine.materialize import materialize
 
@@ -132,15 +147,13 @@ async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_
         return materialize(
             bio_graph_schema,
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name=f"second_{backfill}",
             backfill=backfill,
         )
 
     @sync_to_async
-    def position(graph):
+    def position(graph: core_models.Graph) -> watermark.Position:
         return watermark.position(graph)
 
     cold = await second_view(False)
@@ -159,20 +172,20 @@ async def test_a_new_view_over_admitted_evidence_needs_a_backfill_until_it_gets_
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_view_over_nothing_it_admits_starts_consistent(
-    table_projector, minimal_schema, authenticated_context
+    table_projector: TableProjector,
+    minimal_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """No backfill needed when there is nothing to backfill: the write path will draw everything that comes."""
     from graph_engine.materialize import materialize
 
     @sync_to_async
-    def make():
+    def make() -> watermark.Position:
         request = authenticated_context.request
         graph = materialize(
             minimal_schema,
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="empty_view",
         )
         return watermark.position(graph)
@@ -185,16 +198,16 @@ async def test_a_view_over_nothing_it_admits_starts_consistent(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_rebuild_marks_consistent_and_a_dead_rebuild_is_honest(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def rebuild():
+    def rebuild() -> tuple[watermark.Position, str | None]:
         GraphController(projector=table_projector).rebuild_projection(test_graph)
         return watermark.position(test_graph), watermark.active_schema_hash(test_graph)
 
@@ -207,13 +220,13 @@ async def test_rebuild_marks_consistent_and_a_dead_rebuild_is_honest(
     )
     assert not position.schema_stale
 
-    def explode(*args, **kwargs):
+    def explode(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("died after the drop")
 
     monkeypatch.setattr(projector, "project_all", explode)
 
     @sync_to_async
-    def failing_rebuild():
+    def failing_rebuild() -> tuple[watermark.Position, str | None]:
         with pytest.raises(RuntimeError):
             GraphController(projector=table_projector).rebuild_projection(test_graph)
         return watermark.position(test_graph), watermark.active_schema_hash(test_graph)
@@ -269,7 +282,9 @@ def test_an_outbox_row_is_written_with_the_assertion_and_cleared_by_id(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_projection_reports_caught_up_after_a_write(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     written = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
@@ -284,6 +299,7 @@ async def test_projection_reports_caught_up_after_a_write(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     projection = result.data["graph"]["projection"]
     assert projection["kind"] == "table"
     assert projection["status"] == "CONSISTENT"
@@ -296,7 +312,11 @@ async def test_projection_reports_caught_up_after_a_write(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_health_check_reports_lag_from_the_outbox(
-    api_schema, simple_api_context, test_graph: core_models.Graph, monkeypatch, settings
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    monkeypatch: pytest.MonkeyPatch,
+    settings: SettingsWrapper,
 ) -> None:
     """`/ht` warns from the same outbox the cursor is derived from — no second ledger.
 
@@ -307,7 +327,7 @@ async def test_the_health_check_reports_lag_from_the_outbox(
 
     settings.PROJECTION_LAG_THRESHOLD = 0
 
-    def caught_up():
+    def caught_up() -> list[HealthCheckException]:
         check = ProjectionLagHealthCheck()
         check.run_check()
         return check.errors
@@ -316,7 +336,7 @@ async def test_the_health_check_reports_lag_from_the_outbox(
         "nothing pending, nothing to warn about"
     )
 
-    def down(*args, **kwargs):
+    def down(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("projector down")
 
     monkeypatch.setattr(projector, "reproject_refs", down)

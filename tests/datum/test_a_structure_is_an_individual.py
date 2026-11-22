@@ -20,7 +20,9 @@ from evidence import claims as claims_module
 from evidence import models as evidence_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, reads, sdl, writes
+from tests.support.identity import owned_by
 
 STRUCTURE_BY_IDENTIFIER = """
     query S($identifier: StructureIdentifier!, $object: StructureObject!) {
@@ -35,7 +37,9 @@ STANDINGS = """
 """
 
 
-async def _entity_with_roi(api_schema, ctx, object_id: str, length: float) -> str:
+async def _entity_with_roi(
+    api_schema: kante.Schema, ctx: HttpContext, object_id: str, length: float
+) -> str:
     result = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
         variable_values={
@@ -59,23 +63,29 @@ async def _entity_with_roi(api_schema, ctx, object_id: str, length: float) -> st
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertEntityExists"]["instance"]["id"]
 
 
-async def _structure_id(api_schema, ctx, object_id: str) -> str:
+async def _structure_id(
+    api_schema: kante.Schema, ctx: HttpContext, object_id: str
+) -> str:
     found = await api_schema.execute(
         STRUCTURE_BY_IDENTIFIER,
         variable_values={"identifier": "ROI", "object": object_id},
         context_value=ctx,
     )
     assert found.errors is None, f"GraphQL errors: {found.errors}"
+    assert found.data is not None
     return found.data["structureByIdentifier"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_a_datum_stops_its_evidence_counting(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The datum's standing is honoured by the fold: retract it and the derived
     value it fed is refolded without it; attest it and the value returns. Its
@@ -121,7 +131,9 @@ async def test_retracting_a_datum_stops_its_evidence_counting(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_second_existence_claim_is_agreement(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """One datum, one row; the second explicit claim is a standing under its own
     act, so agreement is countable and identity stays external."""
@@ -141,6 +153,7 @@ async def test_a_second_existence_claim_is_agreement(
         context_value=simple_api_context,
     )
     assert first.errors is None, f"GraphQL errors: {first.errors}"
+    assert first.data is not None
     second = await api_schema.execute(
         mutation,
         variable_values={
@@ -149,6 +162,7 @@ async def test_a_second_existence_claim_is_agreement(
         context_value=simple_api_context,
     )
     assert second.errors is None, f"GraphQL errors: {second.errors}"
+    assert second.data is not None
 
     assert (
         first.data["assertStructureExists"]["structure"]["id"]
@@ -165,6 +179,7 @@ async def test_a_second_existence_claim_is_agreement(
         context_value=simple_api_context,
     )
     assert standings.errors is None, f"GraphQL errors: {standings.errors}"
+    assert standings.data is not None
     assert [
         (row["stands"], row["assertion"]["id"]) for row in standings.data["standings"]
     ] == [(True, second.data["assertStructureExists"]["assertion"]["id"])]
@@ -173,7 +188,9 @@ async def test_a_second_existence_claim_is_agreement(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_an_informs_claim_refolds_what_it_fed(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """`_reproject_claim` used to redraw the node from a `State` row still holding
     the withdrawn datum's contribution."""
@@ -209,7 +226,9 @@ async def test_retracting_an_informs_claim_refolds_what_it_fed(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_a_measurement_retracts_its_informs_row(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A measurement is one claim written as two rows; the act that retracts it
     retracts both, and the values it fed are refolded."""
@@ -229,6 +248,7 @@ async def test_retracting_a_measurement_retracts_its_informs_row(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     structure = made.data["assertStructureExists"]["structure"]["id"]
 
     measured = await api_schema.execute(
@@ -244,6 +264,7 @@ async def test_retracting_a_measurement_retracts_its_informs_row(
         context_value=simple_api_context,
     )
     assert measured.errors is None, f"GraphQL errors: {measured.errors}"
+    assert measured.data is not None
     measurement = measured.data["assertMeasurementExists"]["link"]["id"]
     assert await reads.property_of(
         api_schema, simple_api_context, test_graph, entity, "avg_length"
@@ -409,7 +430,7 @@ async def test_create_structure(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
@@ -443,7 +464,7 @@ async def test_a_later_value_about_a_datum_stays_on_that_individual(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
@@ -466,6 +487,7 @@ async def test_a_later_value_about_a_datum_stays_on_that_individual(
     )
 
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
+    assert create_result.data is not None
     structure_id = create_result.data["assertStructureExists"]["structure"]["id"]
 
     recorded = await api_schema.execute(
@@ -519,6 +541,7 @@ async def test_a_structure_names_its_kind(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     structure = result.data["assertStructureExists"]["structure"]
     assert structure["kind"] == {
         "id": structure["kindId"],
@@ -579,15 +602,16 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def edge_graph(
-    transactional_db, table_projector, edge_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    edge_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="edge_graph",
     )
 
@@ -598,7 +622,7 @@ async def test_structure_relation_is_drawn_between_its_structures(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     edge_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The claim is recorded, addressed by its own id, and drawn where a view mounts its ends (RFC 0027)."""
     category = await core_models.StructureRelationCategory.objects.filter(
@@ -617,6 +641,7 @@ async def test_structure_relation_is_drawn_between_its_structures(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     payload = created.data["assertStructureRelationExists"]["link"]
 
     assert payload["sourceRef"] == source, (
@@ -668,6 +693,7 @@ async def test_retracting_a_structure_relation_is_a_standing(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     relation_id = created.data["assertStructureRelationExists"]["link"]["id"]
 
     archived = await api_schema.execute(
@@ -720,6 +746,7 @@ async def test_structure_relation_supersede_and_retract_reach_the_row(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     original = created.data["assertStructureRelationExists"]["link"]["id"]
 
     updated = await api_schema.execute(
@@ -730,6 +757,7 @@ async def test_structure_relation_supersede_and_retract_reach_the_row(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     replacement = updated.data["supersedeStructureRelation"]["link"]["id"]
     assert replacement != original, (
         "An update supersedes a claim rather than editing it"

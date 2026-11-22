@@ -17,6 +17,7 @@ from kante.context import HttpContext
 from core import models as core_models
 from graph_engine import projector as projector_module
 from graph_engine import reports
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, reads, rules, writes
 
 JOHANNES = "johannes"
@@ -47,14 +48,14 @@ async def test_a_node_two_categories_admit_is_drawn_once_under_both(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """One vertex, two labels — not a refusal, and not two vertices."""
 
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def both_admit_it() -> tuple[str, dict]:
+    def both_admit_it() -> tuple[str, reports.DrawCounts]:
         node = claims.only_instance(test_graph)
         ais = graphs.define_entity(
             test_graph,
@@ -98,7 +99,7 @@ async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """`entities(category:)` for either category lists it, and so does the
     category's element table in the property graph."""
@@ -127,6 +128,7 @@ async def test_it_is_listed_under_each_category_and_in_each_namespace_view(
             context_value=simple_api_context,
         )
         assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+        assert listed.data is not None
         assert [row["id"] for row in listed.data["entities"]] == [ref]
 
     @sync_to_async
@@ -149,7 +151,7 @@ async def test_properties_are_the_union_over_the_categories(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """AIS derives `avg_length`; Excitatory derives `max_length`; the vertex has both."""
 
@@ -188,6 +190,7 @@ async def test_properties_are_the_union_over_the_categories(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     rich = {row["key"]: row["value"] for row in read.data["entity"]["richProperties"]}
     assert rich["avg_length"] == 3.0 and rich["max_length"] == 4.0, (
         "richProperties declares the keys of every category"
@@ -200,7 +203,7 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """One vertex has one value per key. AIS says `avg_length` is the MEAN,
     Excitatory says the MAX: whichever was written would misreport the other,
@@ -209,7 +212,7 @@ async def test_a_key_two_categories_define_differently_is_refused_naming_both(
     await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def conflict() -> tuple[dict, dict[str, str]]:
+    def conflict() -> tuple[reports.DrawCounts, dict[str, str]]:
         graphs.define_entity(
             test_graph, "AIS", rules.definition(rules.rule(rules.word("AIS")))
         )
@@ -265,7 +268,10 @@ RETRACT_RELATION = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(
-    api_schema, simple_api_context, test_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """The edge-side twin of RFC 0019 (RFC 0021).
 
@@ -307,6 +313,7 @@ async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     link_id = result.data["assertRelationExists"]["link"]["id"]
     assert len(result.data["assertRelationExists"]["drawings"]) == 2, (
         "one drawing per admitting category"
@@ -339,7 +346,9 @@ async def test_an_edge_two_relation_categories_admit_is_drawn_under_both(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_view_has_one_category_per_declared_word(test_graph) -> None:
+def test_a_view_has_one_category_per_declared_word(
+    test_graph: core_models.Graph,
+) -> None:
     """`(graph, term)` is unique on `Category` (RFC 0021): the invariant the deleted
     term→category map silently assumed is one the database states."""
     from django.db import IntegrityError, transaction

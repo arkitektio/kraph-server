@@ -13,6 +13,7 @@ from django.db import IntegrityError, transaction
 
 from core import models as core_models
 from graph_engine import models as graph_engine_models
+from graph_engine.projection import TableProjector
 from tests.support import drawing
 
 
@@ -28,7 +29,9 @@ def _bare_vertex(graph: core_models.Graph) -> graph_engine_models.ProjectionVert
 
 @pytest.mark.django_db(transaction=True)
 def test_a_category_of_another_graph_is_refused(
-    test_graph, bio_graph, table_projector
+    test_graph: core_models.Graph,
+    bio_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     foreign = _category(bio_graph, "AIS")
     vertex = _bare_vertex(test_graph)
@@ -40,7 +43,9 @@ def test_a_category_of_another_graph_is_refused(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_invented_category_id_is_refused(test_graph, table_projector) -> None:
+def test_an_invented_category_id_is_refused(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     vertex = _bare_vertex(test_graph)
     with pytest.raises(IntegrityError):
         with transaction.atomic():
@@ -51,7 +56,9 @@ def test_an_invented_category_id_is_refused(test_graph, table_projector) -> None
 
 @pytest.mark.django_db(transaction=True)
 def test_updating_a_label_onto_a_foreign_category_is_refused(
-    test_graph, bio_graph, table_projector
+    test_graph: core_models.Graph,
+    bio_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     own = _category(test_graph, "AIS")
     foreign = _category(bio_graph, "AIS")
@@ -68,7 +75,7 @@ def test_updating_a_label_onto_a_foreign_category_is_refused(
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_a_category_cascades_its_drawings_and_only_its_drawings(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     ais = _category(test_graph, "AIS")
     cell = _category(test_graph, "Cell")
@@ -102,7 +109,7 @@ def test_deleting_a_category_cascades_its_drawings_and_only_its_drawings(
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_one_of_a_vertexs_categories_keeps_the_vertex(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """RFC 0019: a vertex under two categories loses one label, not itself."""
     ais = _category(test_graph, "AIS")
@@ -133,16 +140,25 @@ def test_deleting_one_of_a_vertexs_categories_keeps_the_vertex(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_null_category_still_passes(test_graph, table_projector) -> None:
+def test_a_null_category_still_passes(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     # Rows an older projector drew have no category stamp; the constraint is
-    # MATCH SIMPLE, so they survive until a reproject re-draws them.
+    # MATCH SIMPLE, so they survive until a reproject re-draws them. The null id
+    # is outside `draw_node`'s declared type on purpose: it is that legacy row.
     ref = str(uuid.uuid4())
-    table_projector.draw_node(test_graph, ref, [("Cell", None)], "ENTITY", [ref])
+    table_projector.draw_node(
+        test_graph,
+        ref,
+        [("Cell", None)],  # pyright: ignore[reportArgumentType]
+        "ENTITY",
+        [ref],
+    )
 
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_one_category_keeps_the_vertex_under_the_other(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """The composite FK cascades the deleted category's *label*; the vertex
     stays while another label holds it, and goes with its last one."""

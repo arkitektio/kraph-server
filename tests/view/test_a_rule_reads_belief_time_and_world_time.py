@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from authentikate.models import Organization
+from django.db.models import QuerySet
 
 from core import models as core_models
 from evidence import models as evidence_models
@@ -27,7 +28,7 @@ def _metrics(
     organization: Organization,
     rule: input_models.DerivationRuleInput | None = None,
     definition: dict | None = None,
-):
+) -> QuerySet[evidence_models.Metric]:
     """The metrics one property would fold, under `metric_scope`."""
     claim_q, _ = selector_module.metric_scope(definition, rule)
     return evidence_models.Metric.objects.for_organization(organization).filter(claim_q)

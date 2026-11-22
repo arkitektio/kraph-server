@@ -11,18 +11,20 @@ This module follows the pattern from core/types.py where:
 """
 
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TYPE_CHECKING, Annotated, Optional, TypeVar, Union, cast
+from typing import TYPE_CHECKING, Annotated, Any, Optional, TypeVar, Union, cast
 
 import strawberry
 import strawberry_django
 from asgiref.sync import sync_to_async
+from django.db.models import Model, QuerySet
 from strawberry.scalars import JSON
 
 if TYPE_CHECKING:
     # Resolved lazily at schema build (`strawberry.lazy`): datasets.types imports this module's package.
     from datasets.types import PairsQueryRun
+    from graph_engine.traversal import TraversalSpec
 from datetime import datetime
 
 import kante
@@ -64,6 +66,10 @@ from stats.gen import create_stats_type
 # strawberry-django applies it on root fields, nested prefetches and pk lookups alike.
 
 
+#: A GraphQL type class, handed through the decorators below unchanged.
+TypeClass = TypeVar("TypeClass", bound=type)
+
+
 #: How each declaratively-served model reaches the organization that owns it.
 #: The same lookups `stats/gen.py` already passes as its `scope` callable — that
 #: module requires one, and says why, which is what made the absence here visible.
@@ -74,7 +80,7 @@ _ORG_PATH: dict[str, str] = {
 }
 
 
-def _organization_filter(model) -> str | None:
+def _organization_filter(model: type[Model]) -> str | None:
     """The lookup that scopes this model to a tenant, or None if it has no direct one.
 
     Keyed on the **concrete** model. `EntityCategory`, `GraphTableQuery` and the
@@ -88,7 +94,7 @@ def _organization_filter(model) -> str | None:
     return _ORG_PATH.get(model._meta.concrete_model.__name__)
 
 
-def org_scoped(cls):
+def org_scoped(cls: TypeClass) -> TypeClass:
     """Fence a declaratively-served type to the request's organization.
 
     **The read side had no tenant fence at all.** The write side closes this
@@ -109,7 +115,12 @@ def org_scoped(cls):
 
     previous = getattr(cls, "get_queryset", None)
 
-    def get_queryset(cls_, queryset, info, **kwargs):
+    def get_queryset(
+        cls_: type,
+        queryset: QuerySet[Model],
+        info: kante.Info,
+        **kwargs: Any,
+    ) -> QuerySet[Model]:
         if previous is not None:
             queryset = previous(queryset, info, **kwargs)
         lookup = _organization_filter(queryset.model)
@@ -121,13 +132,21 @@ def org_scoped(cls):
     return cls
 
 
-def _kind_dispatch(cls, kinds: tuple[str, ...]):
+def _kind_dispatch(cls: TypeClass, kinds: tuple[str, ...]) -> TypeClass:
     """Teach a GraphQL type which `kind` values of its shared table belong to it."""
 
-    def is_type_of(obj, info, _kinds=kinds) -> bool:
+    def is_type_of(
+        obj: object, info: kante.Info, _kinds: tuple[str, ...] = kinds
+    ) -> bool:
         return getattr(obj, "kind", None) in _kinds
 
-    def get_queryset(cls_, queryset, info, _kinds=kinds, **kwargs):
+    def get_queryset(
+        cls_: type,
+        queryset: QuerySet[Model],
+        info: kante.Info,
+        _kinds: tuple[str, ...] = kinds,
+        **kwargs: Any,
+    ) -> QuerySet[Model]:
         # Kind *and* tenant. This filtered on kind alone, which meant the two
         # `get_queryset` overrides in this module — the only two — narrowed a
         # shared table to one category type and handed back every organization's
@@ -143,7 +162,9 @@ def _kind_dispatch(cls, kinds: tuple[str, ...]):
     return cls
 
 
-def kind_type(model, kinds, **kwargs):
+def kind_type(
+    model: type[Model], kinds: str | tuple[str, ...], **kwargs: Any
+) -> Callable[[TypeClass], TypeClass]:
     """A `django_type` over a shared table, dispatching on `kind`.
 
     `only=["kind"]` matters: without it the optimizer defers the column and every row
@@ -152,7 +173,7 @@ def kind_type(model, kinds, **kwargs):
 
     kinds = kinds if isinstance(kinds, tuple) else (kinds,)
 
-    def wrapper(cls):
+    def wrapper(cls: TypeClass) -> TypeClass:
         return kante.django_type(model, only=["kind"], **kwargs)(
             _kind_dispatch(cls, kinds)
         )
@@ -160,13 +181,21 @@ def kind_type(model, kinds, **kwargs):
     return wrapper
 
 
-def kind_interface(model, kinds, **kwargs):
+def kind_interface(
+    model: type[Model], kinds: str | tuple[str, ...], **kwargs: Any
+) -> Callable[[TypeClass], TypeClass]:
     """A `django_interface` scoped to a subset of its table's kinds."""
 
     kinds = kinds if isinstance(kinds, tuple) else (kinds,)
 
-    def wrapper(cls):
-        def get_queryset(cls_, queryset, info, _kinds=kinds, **kw):
+    def wrapper(cls: TypeClass) -> TypeClass:
+        def get_queryset(
+            cls_: type,
+            queryset: QuerySet[Model],
+            info: kante.Info,
+            _kinds: tuple[str, ...] = kinds,
+            **kw: Any,
+        ) -> QuerySet[Model]:
             queryset = queryset.filter(kind__in=_kinds)
             lookup = _organization_filter(queryset.model)
             if lookup is None:
@@ -1287,7 +1316,7 @@ class StructureRelationCategory(EdgeCategory, Category):
 # ===========================================
 
 
-def _scatter_plot_scoped(cls):
+def _scatter_plot_scoped(cls: TypeClass) -> TypeClass:
     """Fence `ScatterPlot` to the request's organization.
 
     Its own fence rather than `org_scoped`, because a scatter plot has no
@@ -1295,7 +1324,12 @@ def _scatter_plot_scoped(cls):
     query it is drawn from.
     """
 
-    def get_queryset(cls_, queryset, info, **kwargs):
+    def get_queryset(
+        cls_: type,
+        queryset: QuerySet[models.ScatterPlot],
+        info: kante.Info,
+        **kwargs: Any,
+    ) -> QuerySet[models.ScatterPlot]:
         organization = get_active_organization(info)
         return queryset.filter(graph_query__graph__organization=organization)
 
@@ -1588,7 +1622,7 @@ class Node:
 
     _value: strawberry.Private[RetrievedNode]
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._value)
 
     # Five fields used to sit here and all five were about the **vertex** rather
@@ -1787,7 +1821,12 @@ class Node:
         drawings = await _drawings_for_ref(self._value.unique_id, info)
         return [NodeDrawing(_value=drawing) for drawing in drawings]
 
-    def _traversal(self, kinds, direction, categories):
+    def _traversal(
+        self,
+        kinds: list[enums.DrawnEdgeKind] | None,
+        direction: enums.EdgeDirection | None,
+        categories: list[strawberry.ID] | None,
+    ) -> "tuple[models.Graph, TraversalSpec]":
         """The view and the spec for `edges` / `neighbors`, with the client's categories checked against it."""
         from graph_engine import traversal
 
@@ -1835,7 +1874,7 @@ class Node:
         if self._value.is_row_backed:
             return []
 
-        def work():
+        def work() -> list[RetrievedEdge]:
             graph, spec = self._traversal(kinds, direction, categories)
             edges = traversal.incident_edges(
                 get_controller(), graph, [self._value], spec
@@ -1865,7 +1904,7 @@ class Node:
         if self._value.is_row_backed:
             return []
 
-        def work():
+        def work() -> list[RetrievedNode]:
             graph, spec = self._traversal(kinds, direction, categories)
             controller = get_controller()
             refs = traversal.neighbor_refs(controller, graph, [self._value], spec)[
@@ -2100,7 +2139,7 @@ class Structure:
 
     _value: strawberry.Private[RetrievedStructure]
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._value)
 
     @strawberry.field(
@@ -2323,7 +2362,7 @@ class Metric:
 
     _value: strawberry.Private[RetrievedMetric]
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._value)
 
     @strawberry.field(
@@ -2525,7 +2564,7 @@ class Edge:
 
     _value: strawberry.Private[retrieved.RetrievedEdge]
 
-    def __hash__(self):
+    def __hash__(self) -> int:
         return hash(self._value)
 
     # `graphId` and `globalId` used to sit here, and both named the drawing rather
@@ -3892,25 +3931,25 @@ class OutputParticipation(Edge):
 # from — structures and metrics are evidence rows with no AGE presence, so no
 # vertex can carry their type and the cast could never produce them. Both are
 # constructed directly (`Structure(_value=…)`) everywhere they surface.
-NodeSubtype = Union[Entity, NaturalEvent, ProtocolEvent]
+NodeSubtype = Entity | NaturalEvent | ProtocolEvent
 
 # Union type for all edge subtypes
 # `Assertion` is deliberately absent: it is the evidence row now, not an AGE edge.
 # `ReifiesAsSource`/`ReifiesAsTarget` used to be here. `RetrievedEdge.from_link`
 # sets `type` from `Link.Kind`, whose ten values map onto the ten cases in
 # `cast_edge_to_graphql_type` — neither reifies branch was reachable.
-EdgeSubtype = Union[
-    Relation,
-    StructureRelation,
-    Description,
-    Measurement,
-    InputParticipation,
-    OutputParticipation,
-    Sameness,
-    Difference,
-    Classification,
-    Derivation,
-]
+EdgeSubtype = (
+    Relation
+    | StructureRelation
+    | Description
+    | Measurement
+    | InputParticipation
+    | OutputParticipation
+    | Sameness
+    | Difference
+    | Classification
+    | Derivation
+)
 
 
 def cast_node_to_graphql_type(node: RetrievedNode) -> NodeSubtype:

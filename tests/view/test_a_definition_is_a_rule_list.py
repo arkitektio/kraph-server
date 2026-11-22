@@ -11,10 +11,13 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import pytest
+from authentikate.models import Organization
+from django.db.models import Q
 from pydantic import ValidationError
 
 from evidence import models as evidence_models
 from evidence import selector, writer
+from evidence.values import JSONValue
 from graph_engine import input_models as models
 from tests.support import rules  # noqa: E402
 from tests.support import rules as R
@@ -22,7 +25,7 @@ from tests.support import rules as R
 DEC5 = datetime(2026, 12, 5, tzinfo=UTC)
 
 
-def _condition(field: str, operator: str, value) -> dict:
+def _condition(field: str, operator: str, value: JSONValue) -> dict:
     return {"field": field, "operator": operator, "value": value}
 
 
@@ -81,7 +84,7 @@ def test_a_category_rule_needs_a_word() -> None:
     ],
 )
 def test_invalid_conditions_are_refused_in_a_definition(
-    field: str, operator: str, value
+    field: str, operator: str, value: JSONValue | datetime
 ) -> None:
     with pytest.raises(ValidationError):
         models.CategoryDefinitionInput(
@@ -202,13 +205,13 @@ def test_the_stored_shape_is_the_one_the_compiler_reads() -> None:
 
 
 def _classify(
-    organization,
+    organization: Organization,
     word: str,
     subject: str,
     *,
     app_id: str = "pytest",
     action_name: str | None = None,
-    asserted_at=None,
+    asserted_at: datetime | None = None,
 ) -> str:
     term = writer.ensure_term(organization, "ENTITY", word)
     assertion = writer.create_assertion(
@@ -235,7 +238,7 @@ def _classify(
     return str(node.pk)
 
 
-def _matched(organization, definition: dict) -> set[str]:
+def _matched(organization: Organization, definition: dict) -> set[str]:
     claims = evidence_models.Link.objects.for_organization(organization).filter(
         kind=evidence_models.Link.Kind.CLASSIFIES
     )
@@ -248,7 +251,7 @@ def _matched(organization, definition: dict) -> set[str]:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_rules_union_and_conditions_intersect(organization) -> None:
+def test_rules_union_and_conditions_intersect(organization: Organization) -> None:
     peter_early = _classify(
         organization, "AIS", "peter", asserted_at=datetime(2026, 11, 1, tzinfo=UTC)
     )
@@ -282,7 +285,7 @@ def test_rules_union_and_conditions_intersect(organization) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_unless_group_blocks_a_matching_rule(organization) -> None:
+def test_an_unless_group_blocks_a_matching_rule(organization: Organization) -> None:
     good = _classify(organization, "Probe", "peter", app_id="curation-ui")
     sloppy = _classify(organization, "Probe", "peter", app_id="sloppy-import")
 
@@ -301,7 +304,7 @@ def test_an_unless_group_blocks_a_matching_rule(organization) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_not_in_does_not_drop_claims_with_no_action(organization) -> None:
+def test_not_in_does_not_drop_claims_with_no_action(organization: Organization) -> None:
     """`ACTION NOT_IN [x]` must keep claims that carry no action at all — SQL's
     NULL-swallowing NOT IN is compiled around, not inherited."""
     human = _classify(organization, "Probe", "peter", action_name=None)
@@ -321,7 +324,9 @@ def test_not_in_does_not_drop_claims_with_no_action(organization) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_word_only_rule_restricts_trust_for_nobody(organization) -> None:
+def test_a_word_only_rule_restricts_trust_for_nobody(
+    organization: Organization,
+) -> None:
     definition = _definition({"when": [_condition("WORD", "IS", "Probe")]})
     assert selector.trust_predicate(definition, kind="EXISTENCE") is None, (
         "vocabulary alone places no trust restriction — the fast path stays"
@@ -569,7 +574,7 @@ def test_key_is_allowed_only_where_a_rule_is_about_measurements() -> None:
         )
 
 
-def _sql(predicate) -> str:
+def _sql(predicate: Q) -> str:
     return str(predicate)
 
 

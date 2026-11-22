@@ -15,6 +15,7 @@ yours" are the same answer and the error says which table it looked in.
 
 import strawberry
 import strawberry_django
+from django.db.models import QuerySet
 from kante.types import Info
 
 from api import context, filters, pagination, types
@@ -22,12 +23,15 @@ from evidence import log
 from evidence import models as evidence_models
 
 
-def _page(queryset, page: pagination.LogPaginationInput | None) -> list:
+def _page(
+    queryset: QuerySet[evidence_models.Assertion],
+    page: pagination.LogPaginationInput | None,
+) -> list:
     """The offset/limit window — first hundred by default, clamped at `pagination.MAX_LIMIT`."""
     return pagination.slice_window(queryset, page)
 
 
-def _scoped(info: Info):
+def _scoped(info: Info) -> QuerySet[evidence_models.Assertion]:
     """This organization's log, and nothing else's."""
     organization = context.get_active_organization(info)
     context.assert_can_access_organization(info, organization)

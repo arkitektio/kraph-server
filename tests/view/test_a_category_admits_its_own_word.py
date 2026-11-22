@@ -19,6 +19,7 @@ from kante.context import HttpContext
 from api.queries import _edges
 from core import models as core_models
 from evidence import models as evidence_models
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, reads, rules, writes
 
 ENTITIES = """
@@ -76,7 +77,7 @@ async def _combined(api_schema: kante.Schema, ctx: HttpContext) -> core_models.G
 async def test_a_claim_under_a_defined_categorys_word_is_drawn_under_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """ "A new CuratedAIS" lands in the view that declared the word, beside what the rules derive."""
 
@@ -138,7 +139,7 @@ async def test_a_claim_under_a_defined_categorys_word_is_drawn_under_it(
 async def test_rules_that_name_their_own_word_govern_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The worked example's AIS counts Peter's AIS claims and not a student's."""
 
@@ -177,7 +178,7 @@ async def test_rules_that_name_their_own_word_govern_it(
 async def test_a_relation_under_a_defined_categorys_word_is_drawn_and_listed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Edges too: a LINKED claim is a LINKED edge, beside the TOUCHES the rule derives from."""
 
@@ -211,7 +212,7 @@ async def test_a_relation_under_a_defined_categorys_word_is_drawn_and_listed(
 async def test_an_event_under_a_defined_categorys_word_is_drawn_under_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Events too: a Division claimed by anyone is a Division, whatever app the rule scopes Mitosis to."""
 

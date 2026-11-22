@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from core.models import Graph
 
 T = TypeVar("T")
+RowT = TypeVar("RowT", bound="Model")
 
 
 class GraphOwned(Protocol):
@@ -68,7 +69,7 @@ def graph_of(item: GraphOwned) -> "Graph | None":
     return None
 
 
-def scoped(info, model, pk, *, what: str):
+def scoped(info: "Info", model: type[RowT], pk: str | int, *, what: str) -> RowT:
     """Fetch a graph-owned row, or refuse.
 
     Raises `ValueError` when there is no such row and `PermissionError` when
@@ -95,7 +96,7 @@ def scoped(info, model, pk, *, what: str):
     return item
 
 
-def accessible_graph(info, pk):
+def accessible_graph(info: "Info", pk: str | int) -> "Graph":
     """The graph a create-mutation names, checked before anything is written.
 
     `create_*_category` took `models.Graph.objects.get(id=model.graph)` and wrote

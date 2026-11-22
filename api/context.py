@@ -1,3 +1,4 @@
+from authentikate.models import Organization
 from kante.types import Info
 
 from api.extensions.projection import current_projector
@@ -27,7 +28,7 @@ def get_provenance_from_context(info: Info) -> ProvenanceContext:
     )
 
 
-def get_active_organization(info: Info):
+def get_active_organization(info: Info) -> Organization:
     """The organization this request is acting for.
 
     Evidence is organization-scoped, so structures, metrics and assertions are
@@ -53,7 +54,7 @@ def get_active_organization(info: Info):
     return organization
 
 
-def assert_can_access_organization(info: Info, organization) -> None:
+def assert_can_access_organization(info: Info, organization: Organization) -> None:
     """Check the caller may act for this organization.
 
     Kinds are identified by a globally unique primary key, so the client never

@@ -11,10 +11,14 @@ showed two nodes for one cell and each edge and derived property attached to
 whichever observation happened to be named.
 """
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from kante.context import HttpContext
 
 from core import models as core_models
+from evidence.values import JSONValue
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, writes
 from tests.support.graphs import BEFORE
 from tests.support.graphs import example_graph as _example_graph
@@ -35,7 +39,9 @@ NODES = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_observations_claimed_the_same_draw_one_vertex(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """One vertex, addressed by either member, identified by the lowest uuid."""
     a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"][
@@ -47,7 +53,7 @@ async def test_two_observations_claimed_the_same_draw_one_vertex(
     representative = min(a, b)
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[int, str | None, str | None, list[str]]:
         return (
             drawing.vertex_count(test_graph, "AIS"),
             drawing.representative_of(test_graph, a),
@@ -91,7 +97,9 @@ async def test_two_observations_claimed_the_same_draw_one_vertex(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_edges_to_any_member_land_on_the_one_vertex(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Two relation claims naming different members of one individual are one edge, counted twice."""
     a = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -106,7 +114,7 @@ async def test_edges_to_any_member_land_on_the_one_vertex(
     await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[int, int, int, list[dict[str, JSONValue]]]:
         return (
             drawing.edge_count(test_graph, "IS_CONNECTED_TO"),
             drawing.edges_between(test_graph, c, a, "IS_CONNECTED_TO"),
@@ -125,7 +133,9 @@ async def test_edges_to_any_member_land_on_the_one_vertex(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_between_two_members_is_a_self_edge(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The claims say a connects to b; the view says a and b are one thing. The edge is drawn, from the vertex to itself."""
     a = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -136,7 +146,7 @@ async def test_a_relation_between_two_members_is_a_self_edge(
     await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[int, int]:
         return drawing.edge_count(test_graph, "IS_CONNECTED_TO"), drawing.edges_between(
             test_graph, a, a, "IS_CONNECTED_TO"
         )
@@ -148,7 +158,9 @@ async def test_a_relation_between_two_members_is_a_self_edge(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_measurements_of_either_member_fold_into_the_individuals_properties(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """`avg_length` folds every ROI that informs any member (the cached `State` path)."""
     a = await writes.create_entity(
@@ -159,7 +171,7 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
     )
 
     @sync_to_async
-    def before():
+    def before() -> tuple[JSONValue | None, JSONValue | None]:
         return drawing.vertex_properties(test_graph, a).get(
             "avg_length"
         ), drawing.vertex_properties(test_graph, b).get("avg_length")
@@ -169,7 +181,7 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
     await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def after():
+    def after() -> tuple[int, JSONValue | None, JSONValue | None]:
         return (
             drawing.vertex_count(test_graph, "AIS"),
             drawing.vertex_properties(test_graph, a).get("avg_length"),
@@ -193,13 +205,15 @@ async def test_measurements_of_either_member_fold_into_the_individuals_propertie
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_rule_bound_property_folds_over_every_member(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """The `_scoped_state` path: a property with its own `rule.evidence` widens its metric filter to the component."""
     graph_id = await _example_graph(api_schema, simple_api_context, "individual-scoped")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, JSONValue | None]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         a = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
@@ -247,7 +261,9 @@ async def test_a_rule_bound_property_folds_over_every_member(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_the_sameness_splits_the_vertex(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Each observation is its own individual again: own vertex, own fold, own edges."""
     a = await writes.create_entity(
@@ -262,7 +278,7 @@ async def test_retracting_the_sameness_splits_the_vertex(
     sameness = await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def merged():
+    def merged() -> tuple[int, int]:
         return drawing.vertex_count(test_graph, "AIS"), drawing.edge_count(
             test_graph, "PART_OF"
         )
@@ -274,7 +290,16 @@ async def test_retracting_the_sameness_splits_the_vertex(
     )
 
     @sync_to_async
-    def split():
+    def split() -> tuple[
+        int,
+        list[str],
+        list[str],
+        JSONValue | None,
+        JSONValue | None,
+        int,
+        int,
+        list[dict[str, JSONValue]],
+    ]:
         return (
             drawing.vertex_count(test_graph, "AIS"),
             drawing.members_of(test_graph, a),
@@ -313,7 +338,9 @@ async def test_retracting_the_sameness_splits_the_vertex(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retracted_member_leaves_the_individual(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A member the view no longer admits is not a member; the vertex is renamed if it was the representative."""
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -329,7 +356,7 @@ async def test_a_retracted_member_leaves_the_individual(
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[int, int, str | None, list[str]]:
         return (
             drawing.vertex_count(test_graph, "AIS"),
             drawing.vertices_with_ref(test_graph, lowest),

@@ -22,10 +22,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core import models as core_models
 from graph_engine import models
 
 
-def _vertex_holding(graph: Any, ref: str) -> models.ProjectionVertex | None:
+def _vertex_holding(
+    graph: core_models.Graph, ref: str
+) -> models.ProjectionVertex | None:
     member = (
         models.ProjectionMember.objects.filter(graph=graph, ref=str(ref))
         .select_related("vertex")
@@ -34,18 +37,18 @@ def _vertex_holding(graph: Any, ref: str) -> models.ProjectionVertex | None:
     return member.vertex if member is not None else None
 
 
-def vertices_with_ref(graph: Any, ref: str) -> int:
+def vertices_with_ref(graph: core_models.Graph, ref: str) -> int:
     """How many vertices this view draws holding one ref as a member — 0 or 1 by constraint."""
     return models.ProjectionMember.objects.filter(graph=graph, ref=str(ref)).count()
 
 
-def representative_of(graph: Any, ref: str) -> str | None:
+def representative_of(graph: core_models.Graph, ref: str) -> str | None:
     """The ref of the vertex that stands for `ref` in this view, or None if undrawn."""
     vertex = _vertex_holding(graph, ref)
     return str(vertex.ref) if vertex is not None else None
 
 
-def members_of(graph: Any, ref: str) -> list[str]:
+def members_of(graph: core_models.Graph, ref: str) -> list[str]:
     """Every instance ref the vertex holding `ref` stands for, sorted; `[]` if undrawn."""
     vertex = _vertex_holding(graph, ref)
     if vertex is None:
@@ -58,14 +61,14 @@ def members_of(graph: Any, ref: str) -> list[str]:
     )
 
 
-def vertex_count(graph: Any, label: str | None = None) -> int:
+def vertex_count(graph: core_models.Graph, label: str | None = None) -> int:
     queryset = models.ProjectionVertex.objects.filter(graph=graph)
     if label is not None:
         queryset = queryset.filter(labels__label=str(label))
     return queryset.distinct().count()
 
 
-def labels_of(graph: Any, ref: str) -> set[str]:
+def labels_of(graph: core_models.Graph, ref: str) -> set[str]:
     """Every label the vertex holding `ref` is drawn under; `set()` if undrawn."""
     vertex = _vertex_holding(graph, ref)
     if vertex is None:
@@ -78,7 +81,7 @@ def labels_of(graph: Any, ref: str) -> set[str]:
     }
 
 
-def edge_count(graph: Any, label: str | None = None) -> int:
+def edge_count(graph: core_models.Graph, label: str | None = None) -> int:
     queryset = models.ProjectionEdge.objects.filter(graph=graph)
     if label is not None:
         queryset = queryset.filter(label=str(label))
@@ -86,7 +89,7 @@ def edge_count(graph: Any, label: str | None = None) -> int:
 
 
 def edges_between(
-    graph: Any, source_ref: str, target_ref: str, label: str | None = None
+    graph: core_models.Graph, source_ref: str, target_ref: str, label: str | None = None
 ) -> int:
     """Edges between the vertices holding the two refs — either ref may be any member."""
     queryset = models.ProjectionEdge.objects.filter(
@@ -100,7 +103,7 @@ def edges_between(
 
 
 def edge_properties_between(
-    graph: Any, source_ref: str, target_ref: str, label: str
+    graph: core_models.Graph, source_ref: str, target_ref: str, label: str
 ) -> list[dict[str, Any]]:
     """The properties of every edge drawn between the vertices holding the two refs under `label`."""
     queryset = models.ProjectionEdge.objects.filter(
@@ -112,7 +115,7 @@ def edge_properties_between(
     return [dict(edge.properties or {}) for edge in queryset]
 
 
-def refs_with_label(graph: Any, label: str) -> list[str]:
+def refs_with_label(graph: core_models.Graph, label: str) -> list[str]:
     """The **representative** ref of every vertex this view draws under `label`."""
     return [
         str(ref)
@@ -124,7 +127,7 @@ def refs_with_label(graph: Any, label: str) -> list[str]:
     ]
 
 
-def all_vertex_properties(graph: Any) -> dict[str, dict[str, Any]]:
+def all_vertex_properties(graph: core_models.Graph) -> dict[str, dict[str, Any]]:
     """Every drawn record's properties, keyed by representative ref — the whole-drawing snapshot."""
     return {
         record["properties"]["id"]: record["properties"]
@@ -137,7 +140,7 @@ def all_vertex_properties(graph: Any) -> dict[str, dict[str, Any]]:
     }
 
 
-def snapshot(graph: Any) -> dict[str, dict[str, Any]]:
+def snapshot(graph: core_models.Graph) -> dict[str, dict[str, Any]]:
     """Everything a view draws for its nodes, keyed by representative ref.
 
     `{rep: {"labels": sorted labels, "members": sorted members, "properties": {…}}}` —
@@ -166,7 +169,9 @@ def snapshot(graph: Any) -> dict[str, dict[str, Any]]:
     return out
 
 
-def edge_snapshot(graph: Any) -> dict[tuple[str, str, str], dict[str, Any]]:
+def edge_snapshot(
+    graph: core_models.Graph,
+) -> dict[tuple[str, str, str], dict[str, Any]]:
     """Every edge a view draws, keyed by `(source rep, target rep, label)`, with its properties minus the drawing's own stamps."""
     out: dict[tuple[str, str, str], dict[str, Any]] = {}
     for edge in models.ProjectionEdge.objects.filter(graph=graph).select_related(
@@ -180,7 +185,7 @@ def edge_snapshot(graph: Any) -> dict[tuple[str, str, str], dict[str, Any]]:
     return out
 
 
-def edge_property_values(graph: Any, label: str, key: str) -> list[Any]:
+def edge_property_values(graph: core_models.Graph, label: str, key: str) -> list[Any]:
     """The value of one property on every edge this view draws under `label`."""
     return [
         (edge.properties or {}).get(key)
@@ -188,7 +193,7 @@ def edge_property_values(graph: Any, label: str, key: str) -> list[Any]:
     ]
 
 
-def vertex_record(graph: Any, ref: str) -> dict[str, Any] | None:
+def vertex_record(graph: core_models.Graph, ref: str) -> dict[str, Any] | None:
     """The drawn record for the vertex holding `ref` — `{id, label, labels, properties}` — or None if undrawn.
 
     `properties["id"]` is the representative, which may differ from the ref asked for.
@@ -218,13 +223,13 @@ def vertex_record(graph: Any, ref: str) -> dict[str, Any] | None:
     }
 
 
-def vertex_properties(graph: Any, ref: str) -> dict[str, Any]:
+def vertex_properties(graph: core_models.Graph, ref: str) -> dict[str, Any]:
     """The drawn record's properties, or `{}` if the view does not draw the ref."""
     record = vertex_record(graph, ref)
     return record["properties"] if record is not None else {}
 
 
-def participations(graph: Any) -> list[tuple[str, str]]:
+def participations(graph: core_models.Graph) -> list[tuple[str, str]]:
     """Every drawn participation edge, as (label, role), sorted."""
     found: list[tuple[str, str]] = []
     for label in ("WENT_THROUGH", "CAME_OUT_OF"):
@@ -234,7 +239,7 @@ def participations(graph: Any) -> list[tuple[str, str]]:
     return sorted(found)
 
 
-def assertion_counts(graph: Any, label: str) -> list[int]:
+def assertion_counts(graph: core_models.Graph, label: str) -> list[int]:
     """How many claims each drawn edge under this label folds, sorted."""
     return sorted(
         int(count) for count in edge_property_values(graph, label, "__assertion_count")
@@ -242,7 +247,7 @@ def assertion_counts(graph: Any, label: str) -> list[int]:
 
 
 def edge_categories_between(
-    graph: Any, source_ref: str, target_ref: str, label: str
+    graph: core_models.Graph, source_ref: str, target_ref: str, label: str
 ) -> list[Any]:
     """The category each edge drawn between the two refs under `label` was drawn under — one entry per edge (RFC 0021)."""
     queryset = models.ProjectionEdge.objects.filter(

@@ -339,6 +339,7 @@ async def test_a_key_with_several_terms_stays_writable(
     assert created.errors is None, (
         f"A key with several terms must stay writable: {created.errors}"
     )
+    assert created.data is not None
     assert created.data["assertMetricValue"]["metric"]["value"] == "medium"
 
     metric = (

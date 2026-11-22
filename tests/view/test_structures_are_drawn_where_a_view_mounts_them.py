@@ -8,16 +8,21 @@ path and a rebuild draw the same thing, a retracted endpoint takes its edge with
 and an end naming an identifier the view does not mount is refused when it is declared.
 """
 
+from collections.abc import Iterable
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
+from evidence.values import JSONValue
 from graph_engine import input_models as models
 from graph_engine import namespace as namespace_module
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import drawing, graphs, reads, writes
+from tests.support.identity import owned_by
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
 
@@ -52,7 +57,7 @@ MOUNTS = """
 
 
 async def _run(
-    schema: kante.Schema, context: HttpContext, document: str, **variables
+    schema: kante.Schema, context: HttpContext, document: str, **variables: JSONValue
 ) -> dict:
     result = await schema.execute(
         document, variable_values=variables, context_value=context
@@ -84,15 +89,17 @@ def _definition(
 
 @sync_to_async
 def _view(
-    api_context, table_projector, *, mounts=(("Image", IMAGE),), ends=(IMAGE,)
+    api_context: HttpContext,
+    table_projector: TableProjector,
+    *,
+    mounts: Iterable[tuple[str, str]] = (("Image", IMAGE),),
+    ends: Iterable[str] = (IMAGE,),
 ) -> core_models.Graph:
     request = api_context.request
     return materialize(
         _definition(mounts=list(mounts), ends=list(ends)),
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="training pairs",
     )
 
@@ -110,7 +117,7 @@ def _drawn(graph: core_models.Graph) -> tuple[dict, dict]:
 
 
 async def test_an_admitted_claim_is_an_edge_between_two_drawn_structures(
-    api_schema, api_context, table_projector
+    api_schema: kante.Schema, api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     graph = await _view(api_context, table_projector)
     image, word = await _labels(graph)
@@ -161,14 +168,14 @@ async def test_an_admitted_claim_is_an_edge_between_two_drawn_structures(
 
 
 async def test_an_end_naming_an_unmounted_identifier_is_refused(
-    api_context, table_projector
+    api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     with pytest.raises(ValueError, match="mounts no structure @mikro/roi"):
         await _view(api_context, table_projector, ends=(IMAGE, ROI))
 
 
 async def test_the_namespace_carries_structure_vertices_and_their_edges(
-    api_context, table_projector
+    api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     graph = await _view(api_context, table_projector)
     image, word = await _labels(graph)
@@ -184,7 +191,7 @@ async def test_the_namespace_carries_structure_vertices_and_their_edges(
 
 
 async def test_a_words_end_pins_round_trip_through_the_schema(
-    api_schema, api_context, table_projector
+    api_schema: kante.Schema, api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     """End pins are written and read back as GraphQL, and an end with none reads null."""
     graph = await _view(api_context, table_projector)
@@ -220,7 +227,7 @@ async def test_a_words_end_pins_round_trip_through_the_schema(
 
 
 async def test_a_mount_is_made_read_and_kept_while_an_end_names_it(
-    api_schema, api_context, table_projector
+    api_schema: kante.Schema, api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     graph = await _view(api_context, table_projector)
 
@@ -256,7 +263,7 @@ async def test_a_mount_is_made_read_and_kept_while_an_end_names_it(
 
 
 async def test_a_pair_of_structure_kinds_lists_the_relations_that_admit_it(
-    api_schema, api_context, table_projector
+    api_schema: kante.Schema, api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     """`admits` answers from the ends, as the namespace does: a named identifier, or any mounted one."""
     await _view(

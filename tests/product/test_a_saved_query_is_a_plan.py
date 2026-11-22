@@ -6,13 +6,16 @@ query text is not accepted anywhere. Product state, inert to the log.
 """
 
 import uuid
+from typing import Any
 
 import kante
 import pytest
 from kante.context import HttpContext
 
 from core import models as core_models
+from evidence.values import JSONValue
 from graph_engine import input_models
+from graph_engine.controller import GraphController
 from graph_engine.projection.table import TableProjector, compile_table_plan_sql
 from graph_engine.query_ir import TableQueryPlan
 from tests.support import writes
@@ -27,7 +30,7 @@ PLAN = {
 
 @pytest.fixture
 def outsider_graph(
-    db, backend_stack, test_graph: core_models.Graph
+    db: None, backend_stack: tuple[int, int], test_graph: core_models.Graph
 ) -> core_models.Graph:
     """A graph in an organization the test identity is not a member of."""
     from authentikate.models import Membership, Organization, User
@@ -72,6 +75,7 @@ async def test_a_saved_query_is_a_plan_that_round_trips(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"createGraphTableQuery must work: {created.errors}"
+    assert created.data is not None
     made = created.data["createGraphTableQuery"]
     assert made["key"] == key and made["label"] == "First name"
     assert made["legacy"] is False
@@ -85,6 +89,7 @@ async def test_a_saved_query_is_a_plan_that_round_trips(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     assert made["id"] in {row["id"] for row in listed.data["graphTableQueries"]}
 
     updated = await api_schema.execute(
@@ -114,6 +119,7 @@ async def test_a_saved_query_is_a_plan_that_round_trips(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"updateGraphTableQuery must work: {updated.errors}"
+    assert updated.data is not None
     changed = updated.data["updateGraphTableQuery"]
     assert (
         changed["id"] == made["id"]
@@ -193,6 +199,7 @@ async def test_a_saved_query_defaults_its_label_to_its_key(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["createGraphTableQuery"]["label"] == key
 
 
@@ -242,11 +249,12 @@ async def test_a_legacy_row_reads_back_as_legacy(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     got = result.data["graphTableQuery"]
     assert got["legacy"] is True and got["plan"] is None
 
 
-def _compile(plan, **kwargs):
+def _compile(plan: TableQueryPlan, **kwargs: Any) -> tuple[str, dict[str, object]]:
     return compile_table_plan_sql(TableProjector(), plan, **kwargs)
 
 
@@ -293,7 +301,7 @@ def test_compile_table_plan_is_structural_and_parameterized() -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_compile_table_plan_with_a_graph_refuses_an_undeclared_label(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     plan = TableQueryPlan(
         matches=[
@@ -370,7 +378,7 @@ async def test_create_graph_table_query_through_builder_stores_the_plan(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     mutation = """
         mutation CreateGraphTableQueryThroughBuilder($input: CreateGraphTableQueryThroughBuilderInput!) {
             createGraphTableQueryThroughBuilder(input: $input) { id legacy plan { matches { title } wheres { property } returns { property } columns { key } } }
@@ -418,6 +426,7 @@ async def test_create_graph_table_query_through_builder_stores_the_plan(
         mutation, variable_values=variables, context_value=simple_api_context
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["createGraphTableQueryThroughBuilder"]
     assert payload["legacy"] is False
     assert payload["plan"]["matches"][0]["title"] == "p0"
@@ -437,7 +446,7 @@ async def test_create_and_render_graph_table_query_via_api(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     create_mutation = """
         mutation CreateGraphTableQueryThroughBuilder($input: CreateGraphTableQueryThroughBuilderInput!) {
             createGraphTableQueryThroughBuilder(input: $input) {
@@ -517,7 +526,7 @@ async def test_create_and_render_graph_table_query_via_api(
 
 
 def test_a_legacy_raw_cypher_row_is_refused(
-    graph_controller, test_graph: core_models.Graph
+    graph_controller: GraphController, test_graph: core_models.Graph
 ) -> None:
     graph_query = core_models.GraphTableQuery.objects.create(
         graph=test_graph,
@@ -534,7 +543,10 @@ def test_a_legacy_raw_cypher_row_is_refused(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_plan_renders_with_a_structural_filter_order_and_page(
-    api_schema, simple_api_context, graph_controller, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    graph_controller: GraphController,
+    test_graph: core_models.Graph,
 ) -> None:
     from asgiref.sync import sync_to_async
 
@@ -555,7 +567,7 @@ async def test_a_plan_renders_with_a_structural_filter_order_and_page(
         )
 
     @sync_to_async
-    def render():
+    def render() -> tuple[list[JSONValue], list[JSONValue]]:
         from graph_engine.query_ir import TableQueryPlan
 
         plan = TableQueryPlan(
@@ -606,7 +618,10 @@ async def test_a_plan_renders_with_a_structural_filter_order_and_page(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_path_renders_through_the_namespace(
-    api_schema, simple_api_context, graph_controller, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    graph_controller: GraphController,
+    test_graph: core_models.Graph,
 ) -> None:
     """A two-node path is one GRAPH_TABLE pattern with label dispatch."""
     from asgiref.sync import sync_to_async
@@ -620,7 +635,7 @@ async def test_a_relation_path_renders_through_the_namespace(
     )
 
     @sync_to_async
-    def render():
+    def render() -> list[dict[str, JSONValue]]:
         from graph_engine.query_ir import TableQueryPlan
 
         plan = TableQueryPlan(
@@ -663,7 +678,10 @@ async def test_a_relation_path_renders_through_the_namespace(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_optional_path_null_fills_like_optional_match(
-    api_schema, simple_api_context, graph_controller, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    graph_controller: GraphController,
+    test_graph: core_models.Graph,
 ) -> None:
     """An optional path is a LEFT JOIN of its own GRAPH_TABLE: unmatched rows stay, with nulls."""
     from asgiref.sync import sync_to_async
@@ -673,7 +691,7 @@ async def test_an_optional_path_null_fills_like_optional_match(
     await writes_module.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def render():
+    def render() -> list[dict[str, JSONValue]]:
         from graph_engine.query_ir import TableQueryPlan
 
         plan = TableQueryPlan(

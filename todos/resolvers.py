@@ -13,7 +13,8 @@ by hand never ticks or unticks anything.
 """
 
 from collections.abc import Iterable
-from typing import TypeVar
+from datetime import datetime
+from typing import TYPE_CHECKING, TypeVar
 
 import strawberry
 import strawberry_django.filters
@@ -27,18 +28,21 @@ from projects.resolvers import fetch_project
 from todos import inputs, models, types
 from todos.channel import announce
 
+if TYPE_CHECKING:
+    from arkitekt_service.service import Service, Signal
+
 # Saves describe a row for the hub (`kraph_server.service`); what a save does not see is restored.
 # Every `update_fields` save names `stored_descriptors`, or the description computed on save is dropped.
 DESCRIBED = "stored_descriptors"
 
 
-def _service():
+def _service() -> "Service":
     from kraph_server.service import service
 
     return service
 
 
-def _object_signal():
+def _object_signal() -> "Signal":
     from kraph_server.service import object_signal
 
     return object_signal
@@ -383,7 +387,10 @@ _MOVED_FIELDS = [
 
 
 def _move(
-    structure: models.TodoItemStructure, status: models.TodoStatus, now, sub: str
+    structure: models.TodoItemStructure,
+    status: models.TodoStatus,
+    now: datetime,
+    sub: str,
 ) -> None:
     """Move one object to ``status`` in memory, keeping `done` and who/when in step (saved by the caller)."""
     if status == models.TodoStatus.TODO:

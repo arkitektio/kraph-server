@@ -1,5 +1,6 @@
 """Categories and views are listable, and a view's presentation is inert (C4, C7)."""
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
@@ -142,7 +143,7 @@ async def test_graph(db: object, authenticated_context: HttpContext) -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_pair_of_entity_categories_lists_the_relations_that_admit_it(
-    api_schema, test_graph: Graph, authenticated_context: HttpContext
+    api_schema: kante.Schema, test_graph: Graph, authenticated_context: HttpContext
 ) -> None:
     """`RelationCategoryFilter.admits`: the descriptors the namespace draws with, asked from the two ends in one query."""
 
@@ -173,7 +174,7 @@ async def test_a_pair_of_entity_categories_lists_the_relations_that_admit_it(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_two_claims_list_the_relations_that_could_connect_them(
-    api_schema, test_graph: Graph, authenticated_context: HttpContext
+    api_schema: kante.Schema, test_graph: Graph, authenticated_context: HttpContext
 ) -> None:
     """`RelationCategoryFilter.admitsInstances`: `admits`, asked in every view that draws both claims.
 
@@ -210,7 +211,7 @@ async def test_two_claims_list_the_relations_that_could_connect_them(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_view_lists_only_the_plots_drawn_from_its_queries(
-    api_schema, test_graph: Graph, authenticated_context: HttpContext
+    api_schema: kante.Schema, test_graph: Graph, authenticated_context: HttpContext
 ) -> None:
     """`ScatterPlotFilter.graph` and `.query`: a graph's page lists its own plots, not the organization's.
 

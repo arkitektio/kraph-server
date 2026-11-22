@@ -1,4 +1,5 @@
 import logging
+from typing import Any
 
 from django.apps import AppConfig
 
@@ -72,7 +73,7 @@ def connect_projection_lifecycle() -> None:
     logger = logging.getLogger(__name__)
     _deleting_graphs = deleting_graphs
 
-    def _drop(instance) -> None:
+    def _drop(instance: core_models.Graph) -> None:
         from graph_engine.projection.context import current_or_default
 
         try:
@@ -84,11 +85,15 @@ def connect_projection_lifecycle() -> None:
                 instance.age_name,
             )
 
-    def on_graph_deleting(sender, instance, **kwargs) -> None:
+    def on_graph_deleting(
+        sender: type[core_models.Graph], instance: core_models.Graph, **kwargs: Any
+    ) -> None:
         _deleting_graphs.add(int(instance.pk))
         _drop(instance)
 
-    def on_graph_deleted(sender, instance, **kwargs) -> None:
+    def on_graph_deleted(
+        sender: type[core_models.Graph], instance: core_models.Graph, **kwargs: Any
+    ) -> None:
         _deleting_graphs.discard(int(instance.pk))
         _drop(instance)
 
@@ -114,7 +119,11 @@ def connect_projection_lifecycle() -> None:
         dispatch_uid="projection_namespace_drop_final",
     )
 
-    def on_category_changed(sender, instance, **kwargs) -> None:
+    def on_category_changed(
+        sender: type[core_models.Category],
+        instance: core_models.Category,
+        **kwargs: Any,
+    ) -> None:
         from graph_engine import versioning
         from graph_engine.projection.context import current_or_default
 

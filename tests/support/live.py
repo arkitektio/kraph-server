@@ -8,9 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from typing import Any
 
+import kante
 from asgiref.sync import sync_to_async
 from authentikate.models import Client
 from channels.layers import get_channel_layer
@@ -31,12 +32,16 @@ class StubConsumer:
 
     @contextlib.asynccontextmanager
     async def listen_to_channel(
-        self, type: str, *, timeout: float | None = None, groups: Any = ()
-    ) -> AsyncIterator[Any]:
+        self,
+        type: str,
+        *,
+        timeout: float | None = None,
+        groups: Sequence[str] = (),
+    ) -> AsyncIterator[AsyncIterator[dict[str, object]]]:
         for group in groups:
             await self.channel_layer.group_add(group, self.channel_name)
 
-        async def messages() -> Any:
+        async def messages() -> AsyncIterator[dict[str, object]]:
             while True:
                 message = await self.channel_layer.receive(self.channel_name)
                 if message.get("type") == type:
@@ -50,7 +55,7 @@ class StubConsumer:
 
 
 async def subscribe(
-    api_schema, document: str, room: str, variables: dict | None = None
+    api_schema: kante.Schema, document: str, room: str, variables: dict | None = None
 ) -> tuple[asyncio.Task, asyncio.Queue]:
     """Start the subscription; return once its room is registered on the layer, so a write made right after is heard."""
     user, org, membership = await sync_to_async(static_identity)()

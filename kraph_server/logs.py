@@ -14,7 +14,9 @@ Two rules keep the dev console readable (a flooded console also stalls the serve
 
 import logging
 from collections.abc import Iterable
-from typing import Any
+
+from graphql import GraphQLError
+from strawberry.types import ExecutionContext
 
 logger = logging.getLogger("strawberry.execution")
 
@@ -98,7 +100,7 @@ def _expected_errors() -> tuple[type[BaseException], ...]:
     )
 
 
-def log_graphql_errors(errors: Iterable[Any]) -> None:
+def log_graphql_errors(errors: Iterable[GraphQLError]) -> None:
     """Log resolver errors: one line for an expected refusal, a traceback for a bug."""
     expected = _expected_errors()
     for error in errors:
@@ -114,5 +116,9 @@ def log_graphql_errors(errors: Iterable[Any]) -> None:
 class QuietErrorsSchema:
     """Mix in before the strawberry schema class: ``class Schema(QuietErrorsSchema, kante.Schema)``."""
 
-    def process_errors(self, errors: list, execution_context: Any = None) -> None:
+    def process_errors(
+        self,
+        errors: list[GraphQLError],
+        execution_context: ExecutionContext | None = None,
+    ) -> None:
         log_graphql_errors(errors)

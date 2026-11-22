@@ -426,6 +426,7 @@ async def test_structure_kinds_lists_the_organizations_vocabulary(
     )
 
     assert result.errors is None, result.errors
+    assert result.data is not None
     identifiers: set[str] = {
         item["identifier"] for item in result.data["structureKinds"]
     }
@@ -445,6 +446,7 @@ async def test_metric_kinds_name_the_structure_they_describe(
     )
 
     assert result.errors is None, result.errors
+    assert result.data is not None
     kinds = {item["key"]: item for item in result.data["metricKinds"]}
     assert "vector_length" in kinds
     assert kinds["vector_length"]["structureKind"]["identifier"] == "@mikro/roi"
@@ -470,6 +472,7 @@ async def test_another_organizations_kinds_are_not_returned(
     )
 
     assert result.errors is None, result.errors
+    assert result.data is not None
     identifiers: set[str] = {
         item["identifier"] for item in result.data["structureKinds"]
     }
@@ -535,6 +538,7 @@ async def test_a_measurement_round_trips_with_no_graph_anywhere(
     )
 
     assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
+    assert recorded.data is not None
     assert recorded.data["assertMetricValue"]["metric"]["value"] == 45.2
     assert recorded.data["assertMetricValue"]["metric"]["unit"] == "um"
 

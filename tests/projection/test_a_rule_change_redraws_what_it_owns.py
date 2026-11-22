@@ -19,6 +19,7 @@ from django.utils import timezone as django_timezone
 from kante.context import HttpContext
 
 from core import models as core_models
+from graph_engine.projection import TableProjector
 from tests.support import drawing, reads, rules, writes
 from tests.support.graphs import graph_declaring as _graph_declaring
 
@@ -48,7 +49,7 @@ NAME = {
 
 
 async def _node(
-    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph
+    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph: core_models.Graph
 ) -> dict:
     result = await api_schema.execute(
         reads.NODE_PROPERTIES,
@@ -56,6 +57,7 @@ async def _node(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["node"]
 
 
@@ -86,6 +88,7 @@ async def _measured_ais(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     return created.data["assertEntityExists"]["instance"]["id"]
 
 
@@ -94,7 +97,7 @@ async def _update_ais(
     ctx: HttpContext,
     category_id: int,
     properties: list[dict] | None = None,
-    **extra,
+    **extra: object,
 ) -> None:
     payload: dict = {"id": str(category_id), **extra}
     if properties is not None:
@@ -331,8 +334,8 @@ RETRACT_ENTITY = """
 async def test_updating_the_definition_reprojects_before_returning(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
-    backend_stack,
+    table_projector: TableProjector,
+    backend_stack: tuple[int, int],
 ) -> None:
     graph_id = await _graph_declaring(api_schema, simple_api_context, "UpCell")
     entity_id = await writes.create_entity(api_schema, simple_api_context, "UpCell")
@@ -345,7 +348,7 @@ async def test_updating_the_definition_reprojects_before_returning(
     assert retracted.errors is None
 
     @sync_to_async
-    def drawn():
+    def drawn() -> list[str]:
         return drawing.refs_with_label(
             core_models.Graph.objects.get(pk=graph_id), "UpCell"
         )
@@ -355,7 +358,7 @@ async def test_updating_the_definition_reprojects_before_returning(
     )
 
     @sync_to_async
-    def category_and_creator():
+    def category_and_creator() -> tuple[str, str]:
         from evidence import models as evidence_models
 
         graph = core_models.Graph.objects.get(pk=graph_id)
@@ -390,6 +393,7 @@ async def test_updating_the_definition_reprojects_before_returning(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     read_back = updated.data["updateEntityCategory"]["definition"]["rules"][0]["when"]
     assert {
         "field": "SUBJECT",

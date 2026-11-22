@@ -14,9 +14,13 @@ import asyncio
 import datetime
 import uuid
 
+import kante
 import pytest
+from authentikate.models import Organization
 from django.db import connection
+from kante.context import HttpContext
 
+from core import models as core_models
 from evidence import claims as claims_module
 from evidence import models as evidence_models
 from evidence import writer
@@ -24,7 +28,9 @@ from tests.support import reads, sessions, writes
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_database_assigns_seq_and_no_writer_can_pass_one(organization) -> None:
+def test_the_database_assigns_seq_and_no_writer_can_pass_one(
+    organization: Organization,
+) -> None:
     """`seq` comes from a sequence, not from application code.
 
     `writer.create_assertion` takes no `seq` argument and the field is
@@ -47,7 +53,7 @@ def test_the_database_assigns_seq_and_no_writer_can_pass_one(organization) -> No
 
 
 @pytest.mark.django_db(transaction=True)
-def test_seq_is_monotonic_across_assertions(organization) -> None:
+def test_seq_is_monotonic_across_assertions(organization: Organization) -> None:
     """Later assertions get higher positions, and none repeat."""
     written = [
         writer.create_assertion(organization, subject=f"s{index}", app_id="app")
@@ -64,7 +70,7 @@ def test_seq_is_monotonic_across_assertions(organization) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_seq_does_not_repeat_across_organizations(
-    organization, other_organization
+    organization: Organization, other_organization: Organization
 ) -> None:
     """One order spans the log, not one per tenant.
 
@@ -84,7 +90,9 @@ def test_seq_does_not_repeat_across_organizations(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_fold_breaks_ties_on_seq_not_on_wall_clock(organization, roi_kind) -> None:
+def test_the_fold_breaks_ties_on_seq_not_on_wall_clock(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """Two claims at the same instant resolve deterministically, by the later assertion.
 
     This is the case `recorded_at` could not decide. Both claims are given the
@@ -129,7 +137,7 @@ def test_the_fold_breaks_ties_on_seq_not_on_wall_clock(organization, roi_kind) -
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_sequence_survives_a_gap(organization) -> None:
+def test_the_sequence_survives_a_gap(organization: Organization) -> None:
     """Gaps are expected; density is not promised.
 
     A rolled-back transaction consumes a sequence value and leaves a hole. Any
@@ -154,7 +162,9 @@ def test_the_sequence_survives_a_gap(organization) -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_changes_reads_forward_from_a_cursor(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     first, second, third = [
         await writes.assert_entity(api_schema, simple_api_context, "AIS")
@@ -198,7 +208,9 @@ async def test_changes_reads_forward_from_a_cursor(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_changes_withholds_what_may_still_be_committing(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The horizon: `seq` is assigned at insert, not at commit.
 

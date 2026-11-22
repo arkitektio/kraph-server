@@ -4,19 +4,25 @@
 so a node whose label moved does not leave its previous self behind.
 """
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine import projector
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
 from tests.support import drawing, writes
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_reproject_refs_twice_is_one_vertex(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     entity_id = await writes.create_entity(
         api_schema,
@@ -46,7 +52,10 @@ async def test_reproject_refs_twice_is_one_vertex(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_project_all_over_a_populated_namespace_converges(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -74,7 +83,10 @@ async def test_project_all_over_a_populated_namespace_converges(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_redrawing_a_merged_individual_converges(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """`reproject_refs` through any member, twice, leaves one vertex with all its members."""
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -82,7 +94,7 @@ async def test_redrawing_a_merged_individual_converges(
     await writes.merge(api_schema, simple_api_context, [a, b])
 
     @sync_to_async
-    def redraw():
+    def redraw() -> tuple[int, list[str]]:
         controller = GraphController(projector=table_projector)
         projector.reproject_refs(controller, test_graph, [a])
         projector.reproject_refs(controller, test_graph, [b])

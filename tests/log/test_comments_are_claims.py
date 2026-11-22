@@ -75,7 +75,7 @@ def _body(text: str, mention: str | None = None) -> list[dict]:
 
 
 async def _comment(
-    api_schema: kante.Schema, ctx: HttpContext, object_id: str, text: str, **extra
+    api_schema: kante.Schema, ctx: HttpContext, object_id: str, text: str, **extra: str
 ) -> dict:
     result = await api_schema.execute(
         COMMENT,
@@ -90,6 +90,7 @@ async def _comment(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["commentOnStructure"]
 
 
@@ -132,6 +133,7 @@ async def test_a_comment_mints_its_structure_and_folds_its_body(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     assert [row["id"] for row in listed.data["commentsFor"]] == [comment["id"]], (
         "The thread reads back by the datum's address"
     )
@@ -167,6 +169,7 @@ async def test_a_reply_stays_on_its_parents_thread(
         context_value=simple_api_context,
     )
     assert listed.errors is None
+    assert listed.data is not None
     by_id = {row["id"]: row for row in listed.data["commentsFor"]}
     assert [child["text"] for child in by_id[first["comment"]["id"]]["replies"]] == [
         "yes, checked it"
@@ -211,6 +214,7 @@ async def test_resolving_is_a_standing_and_reopening_is_more_evidence(
         context_value=simple_api_context,
     )
     assert resolved.errors is None, f"GraphQL errors: {resolved.errors}"
+    assert resolved.data is not None
     after = resolved.data["retractComment"]["comment"]
     assert after["resolved"] is True
     assert [row["stands"] for row in after["standings"]] == [False]
@@ -224,6 +228,7 @@ async def test_resolving_is_a_standing_and_reopening_is_more_evidence(
         context_value=simple_api_context,
     )
     assert reopened.errors is None, f"GraphQL errors: {reopened.errors}"
+    assert reopened.data is not None
     again = reopened.data["attestComment"]["comment"]
     assert again["resolved"] is False
     assert [row["stands"] for row in again["standings"]] == [True, False], (
@@ -282,6 +287,7 @@ async def test_my_mentions_finds_the_caller_by_subject(
         "query { myMentions { text mentions } }", context_value=simple_api_context
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert [row["mentions"] for row in result.data["myMentions"]] == [[me]], (
         "Only the remark that mentions the caller"
     )
@@ -435,6 +441,7 @@ async def test_a_discussion_reads_in_pages_newest_first(
             context_value=simple_api_context,
         )
         assert result.errors is None, f"GraphQL errors: {result.errors}"
+        assert result.data is not None
         return [row["text"] for row in result.data["commentsFor"]]
 
     assert await page(0) == ["third", "second"]

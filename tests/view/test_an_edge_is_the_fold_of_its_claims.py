@@ -10,6 +10,7 @@ without them — the test passed because no code path could create one.
 """
 
 import uuid
+from collections.abc import Sequence
 
 import kante
 import pytest
@@ -22,6 +23,7 @@ from evidence import claims as claims_module
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine import projector
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, reads, rules, writes
 from tests.support.graphs import AFTER, BEFORE
 from tests.support.graphs import example_graph as _example_graph
@@ -62,7 +64,7 @@ async def test_two_assertions_make_two_rows_and_one_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Agreement is countable in the evidence base and collapsed in the projection.
 
@@ -125,7 +127,7 @@ async def test_retracting_one_of_two_claims_keeps_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Retracting one claim does not retract the proposition.
 
@@ -190,7 +192,7 @@ async def test_a_retraction_folds_survivors_under_the_rule_not_the_drawing(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The survivor set of a correction comes from the rule, and the drawing
     is converged to it — never the other way round.
@@ -287,7 +289,7 @@ async def test_superseding_a_relation_replaces_the_claim_and_keeps_the_old_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Superseding is retract-then-reassert, never an edit in place.
 
@@ -322,6 +324,7 @@ async def test_superseding_a_relation_replaces_the_claim_and_keeps_the_old_one(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     replacement = updated.data["supersedeRelation"]["link"]["id"]
 
     assert replacement != original, (
@@ -354,7 +357,7 @@ async def test_relation_endpoints_key_on_uuids_not_vertex_ids(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """A relation stored against a vertex id would point at nothing after a replay.
 
@@ -404,7 +407,7 @@ async def test_a_relation_reaches_every_view_declaring_its_word(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     second_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """One claim, two edges — the edge half of "two views share a word".
 
@@ -470,7 +473,7 @@ async def test_participation_is_projected_with_its_role(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Both entities reach the event, on the right side, carrying their role."""
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -542,7 +545,7 @@ async def test_two_observers_can_claim_the_same_participation(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Who took part is contestable, so agreement is countable.
 
@@ -597,7 +600,7 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """One observer withdrawing does not undo the other's claim."""
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -619,6 +622,7 @@ async def test_retracting_one_participation_claim_keeps_the_edge(
     )
     assert second.errors is None, f"GraphQL errors: {second.errors}"
 
+    assert second.data is not None
     archived = await api_schema.execute(
         writes.RETRACT_PARTICIPATION,
         variable_values={
@@ -654,7 +658,7 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """With no live claim the edge states nothing, and a replay must agree."""
     source = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -707,13 +711,15 @@ async def test_retracting_the_last_participation_claim_removes_the_edge(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_relation_edges_fold_under_the_relation_categorys_clauses(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Only Karl's post-Dec-5 connectivity claims draw IS_CONNECTED_TO edges."""
     graph_id = await _example_graph(api_schema, simple_api_context, "trust-relations")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         a = claims.mint(org, "Cell", "peter", asserted_at=BEFORE)
@@ -738,7 +744,9 @@ async def test_relation_edges_fold_under_the_relation_categorys_clauses(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_participations_fold_under_the_event_categorys_clauses(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """The event category's clauses govern its participation edges too."""
     graph_id = await _example_graph(
@@ -746,7 +754,7 @@ async def test_participations_fold_under_the_event_categorys_clauses(
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         mother = claims.mint(org, "Cell", "peter", asserted_at=BEFORE)
@@ -782,7 +790,9 @@ async def test_participations_fold_under_the_event_categorys_clauses(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_participation_lists_fold_under_the_event_categorys_clauses(
-    api_schema: kante.Schema, simple_api_context: HttpContext, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     definition = {
         "extensions": {
@@ -814,10 +824,11 @@ async def test_participation_lists_fold_under_the_event_categorys_clauses(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     graph_id = made.data["createGraph"]["id"]
 
     @sync_to_async
-    def build():
+    def build() -> tuple[str, str]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         cell = claims.mint(org, "Cell", "peter")
@@ -851,6 +862,7 @@ async def test_participation_lists_fold_under_the_event_categorys_clauses(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     ids = {row["id"] for row in listed.data["inputParticipations"]}
     assert trusted_id in ids, "the trusted app's participation is listed"
     assert untrusted_id not in ids, (
@@ -863,8 +875,8 @@ async def test_participation_lists_fold_under_the_event_categorys_clauses(
 async def test_link_claims_and_their_retractions_fold_per_relation_category(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
-    table_projector,
-    backend_stack,
+    table_projector: TableProjector,
+    backend_stack: tuple[int, int],
 ) -> None:
     """Both halves of the relation category's trust apply: the **claim** must be
     by somebody its clauses count (an untrusted annotator's claim draws no edge
@@ -873,7 +885,7 @@ async def test_link_claims_and_their_retractions_fold_per_relation_category(
     graph_id = await _graph_declaring(api_schema, simple_api_context, "LinkCell")
 
     @sync_to_async
-    def declare_relation():
+    def declare_relation() -> core_models.Graph:
         graph = core_models.Graph.objects.get(pk=graph_id)
         from core import enums
 
@@ -898,7 +910,7 @@ async def test_link_claims_and_their_retractions_fold_per_relation_category(
     b = await writes.create_entity(api_schema, simple_api_context, "LinkCell")
 
     @sync_to_async
-    def story():
+    def story() -> tuple[int, int, int, int]:
         from evidence import models as evidence_models
 
         touches = core_models.RelationCategory.objects.get(graph=graph, key="touches")
@@ -978,7 +990,10 @@ async def test_link_claims_and_their_retractions_fold_per_relation_category(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_event_several_categories_admit_draws_each_participation_once(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """RFC 0021 for participations: two defined event categories deriving from
     one word each admit the event, so the event is drawn under both labels — but
@@ -1017,7 +1032,7 @@ async def test_an_event_several_categories_admit_draws_each_participation_once(
     )
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[set[str], Sequence[object], Sequence[object]]:
         return (
             drawing.labels_of(test_graph, event),
             drawing.edge_categories_between(test_graph, mother, event, "WENT_THROUGH"),

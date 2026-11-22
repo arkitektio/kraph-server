@@ -16,10 +16,13 @@ import kante
 import pytest
 from asgiref.sync import sync_to_async
 from kante.context import HttpContext
+from strawberry.types import ExecutionResult
 
 from core import models as core_models
 from evidence import models as evidence_models
+from graph_engine.projection import TableProjector
 from tests.support import writes
+from tests.support.identity import owned_by
 
 DELETE_GRAPH = """
     mutation DeleteGraph($input: DeleteGraphInput!) {
@@ -28,7 +31,9 @@ DELETE_GRAPH = """
 """
 
 
-async def _delete(api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph):
+async def _delete(
+    api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph
+) -> ExecutionResult:
     return await api_schema.execute(
         DELETE_GRAPH,
         variable_values={"input": {"id": str(graph.id)}},
@@ -124,7 +129,7 @@ async def test_an_archived_graph_holding_nodes_is_still_deletable(
 async def test_an_empty_archived_graph_is_deletable(
     api_schema: kante.Schema,
     authenticated_context: HttpContext,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The guard has to let something through, or it is a removal, not a guard.
 
@@ -143,9 +148,7 @@ async def test_an_empty_archived_graph_is_deletable(
                 system_version="1.0.0", extensions=input_models.GraphExtensionsInput()
             ),
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="disposable_graph",
         )
         graph.is_archived = True
@@ -189,6 +192,7 @@ async def _an_entity(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     return created.data["assertEntityExists"]["instance"]["id"], category
 
 

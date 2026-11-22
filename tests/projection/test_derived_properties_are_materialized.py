@@ -23,7 +23,9 @@ from evidence import state as state_module
 from evidence import writer
 from graph_engine import projector
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
 from tests.support import reads, writes
+from tests.support.identity import owned_by
 
 INDEXED = {
     "key": "indexed_length",
@@ -151,7 +153,7 @@ def test_the_statistics_are_materialized_beside_the_value(
 def test_a_property_without_index_is_now_filterable(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The capability the old split cost you.
 
@@ -174,7 +176,7 @@ def test_a_property_without_index_is_now_filterable(
 def test_filtering_an_indexed_property_is_allowed(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The indexed one stays queryable, which is the whole reason to mark it."""
     from graph_engine import input_models
@@ -192,7 +194,7 @@ def test_filtering_an_indexed_property_is_allowed(
 def test_sorting_a_property_without_index_is_allowed(
     test_graph: core_models.Graph,
     category_with_both: core_models.EntityCategory,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Ordering gains the same capability as filtering, for the same reason."""
     from graph_engine import input_models
@@ -243,7 +245,7 @@ def test_a_rule_less_property_is_not_filterable(test_graph: core_models.Graph) -
 
 @pytest.mark.django_db(transaction=True)
 def test_materialize_refuses_a_rule_less_property(
-    table_projector, authenticated_context
+    table_projector: TableProjector, authenticated_context: HttpContext
 ) -> None:
     """Declaring an uncomputable property fails loudly, naming the fix.
 
@@ -275,16 +277,14 @@ def test_materialize_refuses_a_rule_less_property(
         materialize(
             definition,
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="rule_less_graph",
         )
 
 
 @pytest.mark.django_db(transaction=True)
 def test_an_unknown_sort_direction_is_rejected(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """Directions are interpolated into Cypher, so `.upper()` is not validation.
 
@@ -302,7 +302,7 @@ def test_an_unknown_sort_direction_is_rejected(
 
 
 async def _properties(
-    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph
+    api_schema: kante.Schema, ctx: HttpContext, entity_id: str, graph: core_models.Graph
 ) -> dict:
     result = await api_schema.execute(
         reads.NODE_PROPERTIES,
@@ -310,6 +310,7 @@ async def _properties(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["node"]["properties"]
 
 
@@ -350,6 +351,7 @@ async def test_recording_a_metric_updates_the_derived_value(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
     assert (await _properties(api_schema, simple_api_context, entity_id, test_graph))[
@@ -402,6 +404,7 @@ async def test_the_projection_carries_its_schema_version(
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
+    assert created.data is not None
     result = await api_schema.execute(
         """
         query Entity($id: ID!, $graph: ID!) {
@@ -415,6 +418,7 @@ async def test_the_projection_carries_its_schema_version(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert (
         result.data["node"]["graph"]["id"] == str(test_graph.id)
         and result.data["node"]["asOfSeq"] >= 0

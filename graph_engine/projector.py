@@ -1802,7 +1802,7 @@ def project_participation(
             1
         ].append(link)
 
-    for (source_ref, target_ref, kind, role), (category, claims) in grouped.items():
+    for (source_ref, target_ref, _kind, role), (category, claims) in grouped.items():
         # A foreign key hands back a base `Category`, which carries every field
         # and none of the kind-specific attributes — the edge labels live on the
         # event proxies.
@@ -1938,7 +1938,7 @@ def draw_components(
 
     by_ref = {str(node.ref): node for node in nodes}
     components = identity_module.view_components(graph, resolved)
-    for representative, members in components.items():
+    for _representative, members in components.items():
         categories = {
             category.pk: category for member in members for category in resolved[member]
         }

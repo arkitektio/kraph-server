@@ -12,6 +12,8 @@ from arkitekt_service.feed.models import FeedCursor
 from arkitekt_service.hook import StructureRef
 from authentikate.models import Organization
 from joserfc.jwk import OKPKey
+from pytest_django.fixtures import SettingsWrapper
+from pytest_django.live_server_helper import LiveServer
 
 from evidence import models as evidence_models
 from kraph_server.hook_agent import FeedHalted, ingest_metrics
@@ -24,7 +26,7 @@ DATASET = "@mikro/arraydataset"
 
 
 @pytest.fixture
-def mikro(settings, live_server) -> None:
+def mikro(settings: SettingsWrapper, live_server: LiveServer) -> None:
     """mikro's feed at the live server, and kraph's instance key, as the hub would vouch for it."""
     prefix = f"/{settings.MY_SCRIPT_NAME.strip('/')}" if settings.MY_SCRIPT_NAME else ""
     settings.ROOT_URLCONF = "tests.support.feed_urls"
@@ -40,7 +42,7 @@ def mikro(settings, live_server) -> None:
 
 
 def test_a_run_ingests_everything_new_and_the_next_finds_nothing(
-    mikro, organization: Organization
+    mikro: None, organization: Organization
 ) -> None:
     feeds.serve(
         organization.identifier,
@@ -67,7 +69,7 @@ def test_a_run_ingests_everything_new_and_the_next_finds_nothing(
 
 
 def test_a_run_reads_its_own_organization_only(
-    mikro, organization: Organization, other_organization: Organization
+    mikro: None, organization: Organization, other_organization: Organization
 ) -> None:
     feeds.serve(
         organization.identifier,
@@ -86,7 +88,7 @@ def test_a_run_reads_its_own_organization_only(
 
 
 def test_a_poison_entry_halts_the_organizations_feed(
-    mikro, organization: Organization
+    mikro: None, organization: Organization
 ) -> None:
     feeds.serve(
         organization.identifier,
@@ -106,7 +108,7 @@ def test_a_poison_entry_halts_the_organizations_feed(
 
 
 def test_a_hub_that_tells_kraph_of_no_mikro_ingests_nothing(
-    mikro, settings, organization: Organization
+    mikro: None, settings: SettingsWrapper, organization: Organization
 ) -> None:
     settings.MIKRO_FEED = None
     assert ingest_metrics(organization=organization.identifier) == {
@@ -115,7 +117,7 @@ def test_a_hub_that_tells_kraph_of_no_mikro_ingests_nothing(
     }
 
 
-def test_an_organization_kraph_has_not_seen_is_read_all_the_same(mikro) -> None:
+def test_an_organization_kraph_has_not_seen_is_read_all_the_same(mikro: None) -> None:
     """rekuest gives every organization the agent; nobody need have opened kraph there first."""
     feeds.serve(
         "static_issuer#newcomer",
@@ -131,7 +133,7 @@ def test_an_organization_kraph_has_not_seen_is_read_all_the_same(mikro) -> None:
 
 
 def test_one_transaction_of_mikros_is_one_act_however_many_pages_it_fills(
-    mikro, organization: Organization
+    mikro: None, organization: Organization
 ) -> None:
     """A batch larger than a page is read whole (the feed never ends a page inside a transaction): one assertion."""
     feeds.serve(

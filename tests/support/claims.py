@@ -13,11 +13,13 @@ is the claimant's own number in [0, 1], None when they gave none.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+
+from authentikate.models import Organization
 
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer
+from evidence.values import JSONValue
 
 
 def classify(
@@ -29,7 +31,7 @@ def classify(
     *,
     observed_at: datetime | None = None,
     confidence: float | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's claim that a node is of a category, optionally back-dated."""
     assertion = writer.create_assertion(
         graph.organization, subject=subject, app_id="pytest", asserted_at=asserted_at
@@ -69,18 +71,18 @@ def retract_classifications(graph: core_models.Graph, ref: str) -> None:
 
 
 def _assertion(
-    organization: Any,
+    organization: Organization,
     subject: str,
     app_id: str = "pytest",
     asserted_at: datetime | None = None,
-) -> Any:
+) -> evidence_models.Assertion:
     return writer.create_assertion(
         organization, subject=subject, app_id=app_id, asserted_at=asserted_at
     )
 
 
 def mint(
-    organization: Any,
+    organization: Organization,
     word: str,
     subject: str,
     *,
@@ -117,7 +119,7 @@ def mint(
 
 
 def relate(
-    organization: Any,
+    organization: Organization,
     word: str,
     source_ref: str,
     target_ref: str,
@@ -127,7 +129,7 @@ def relate(
     asserted_at: datetime | None = None,
     observed_at: datetime | None = None,
     confidence: float | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's relation claim under the organization's `word`."""
     term = writer.ensure_term(organization, "RELATION", word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -144,7 +146,7 @@ def relate(
 
 
 def participate(
-    organization: Any,
+    organization: Organization,
     event_word: str,
     entity_ref: str,
     event_ref: str,
@@ -157,7 +159,7 @@ def participate(
     confidence: float | None = None,
     output: bool = False,
     term_kind: str = "NATURAL_EVENT",
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's participation claim: entity → event, under the event's word."""
     term = writer.ensure_term(organization, term_kind, event_word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -180,7 +182,7 @@ def participate(
 
 
 def same(
-    organization: Any,
+    organization: Organization,
     left_ref: str,
     right_ref: str,
     subject: str,
@@ -189,7 +191,7 @@ def same(
     asserted_at: datetime | None = None,
     observed_at: datetime | None = None,
     confidence: float | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's claim that two observations are one individual, folded
     into the organization-grain cache as the controller folds it."""
     from evidence import identity
@@ -209,7 +211,7 @@ def same(
 
 
 def different(
-    organization: Any,
+    organization: Organization,
     left_ref: str,
     right_ref: str,
     subject: str,
@@ -218,7 +220,7 @@ def different(
     asserted_at: datetime | None = None,
     observed_at: datetime | None = None,
     confidence: float | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's claim that two observations are two individuals (RFC
     0019), folded into the organization-grain cache as the controller folds it."""
     from evidence import identity
@@ -238,14 +240,14 @@ def different(
 
 
 def retract_link(
-    organization: Any,
-    link: Any,
+    organization: Organization,
+    link: evidence_models.Link,
     subject: str,
     *,
     app_id: str = "pytest",
     asserted_at: datetime | None = None,
     at: datetime | None = None,
-) -> Any:
+) -> evidence_models.Standing:
     """One annotator's position that a link claim no longer holds."""
     assertion = _assertion(organization, subject, app_id, asserted_at)
     return writer.record_standing_for_ref(
@@ -259,7 +261,7 @@ def retract_link(
 
 
 def retract_node(
-    organization: Any,
+    organization: Organization,
     ref: str,
     subject: str,
     *,
@@ -267,7 +269,7 @@ def retract_node(
     asserted_at: datetime | None = None,
     at: datetime | None = None,
     confidence: float | None = None,
-) -> Any:
+) -> evidence_models.Standing:
     """One annotator's position that a node no longer exists — `at` is when
     that took effect in the world (`Standing.at`), not when it was said."""
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -283,13 +285,13 @@ def retract_node(
 
 
 def measure(
-    organization: Any,
+    organization: Organization,
     node_ref: str,
     *,
     structure_identifier: str = "ROI",
     obj: str,
     key: str,
-    value: Any,
+    value: JSONValue,
     value_kind: str = "FLOAT",
     subject: str,
     app_id: str = "pytest",
@@ -298,7 +300,7 @@ def measure(
     confidence: float | None = None,
     inform_subject: str | None = None,
     inform_asserted_at: datetime | None = None,
-) -> Any:
+) -> evidence_models.Metric:
     """A measurement against a structure that informs `node_ref`.
 
     The INFORMS link is its own claim, by `inform_subject` (default: the
@@ -337,7 +339,7 @@ def measure(
 
 
 def structure(
-    organization: Any,
+    organization: Organization,
     obj: str,
     subject: str,
     *,
@@ -353,7 +355,7 @@ def structure(
 
 
 def relate_structures(
-    organization: Any,
+    organization: Organization,
     word: str,
     source_structure: str,
     target_structure: str,
@@ -361,7 +363,7 @@ def relate_structures(
     *,
     app_id: str = "pytest",
     asserted_at: datetime | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's structure-relation claim under the organization's `word`."""
     term = writer.ensure_term(organization, "STRUCTURE_RELATION", word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -376,7 +378,7 @@ def relate_structures(
 
 
 def measure_between(
-    organization: Any,
+    organization: Organization,
     word: str,
     source_structure: str,
     entity_ref: str,
@@ -384,7 +386,7 @@ def measure_between(
     *,
     app_id: str = "pytest",
     asserted_at: datetime | None = None,
-) -> Any:
+) -> evidence_models.Link:
     """One annotator's measurement claim: structure describes entity, under `word`."""
     term = writer.ensure_term(organization, "MEASUREMENT", word)
     assertion = _assertion(organization, subject, app_id, asserted_at)
@@ -398,7 +400,9 @@ def measure_between(
     )
 
 
-async def ensure_kind(graph: Any, identifier: str = "roi_test") -> Any:
+async def ensure_kind(
+    graph: core_models.Graph, identifier: str = "roi_test"
+) -> evidence_models.StructureKind:
     """The organization's kind for this datum identifier. No graph is involved —
     kinds are organization vocabulary — the graph only names the tenant."""
     kind, _ = await evidence_models.StructureKind.all_objects.aget_or_create(
@@ -407,7 +411,7 @@ async def ensure_kind(graph: Any, identifier: str = "roi_test") -> Any:
     return kind
 
 
-def only_instance(graph: Any) -> Any:
+def only_instance(graph: core_models.Graph) -> evidence_models.Instance:
     """The one instance the view's words admit — for tests that wrote exactly one."""
     from evidence import selector as selector_module
 
@@ -419,8 +423,11 @@ def only_instance(graph: Any) -> Any:
 
 
 def structure_row(
-    organization: Any, kind: Any, assertion: Any, object_id: str = "roi-1"
-) -> Any:
+    organization: Organization,
+    kind: evidence_models.StructureKind,
+    assertion: evidence_models.Assertion,
+    object_id: str = "roi-1",
+) -> evidence_models.Structure:
     """A structure row to hang measurements off, written directly."""
     return evidence_models.Structure.objects.create_for_organization(
         organization=organization,
@@ -432,15 +439,15 @@ def structure_row(
 
 
 def metric_row(
-    organization: Any,
-    structure: Any,
-    kind: Any,
-    assertion: Any,
+    organization: Organization,
+    structure: evidence_models.Structure,
+    kind: evidence_models.MetricKind,
+    assertion: evidence_models.Assertion,
     *,
     value: float,
     observed_at: datetime,
     asserted_at: datetime,
-) -> Any:
+) -> evidence_models.Metric:
     """One measurement with both time axes set explicitly, written directly."""
     from core.enums import ValueKind
 

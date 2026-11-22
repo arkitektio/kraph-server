@@ -18,7 +18,9 @@ from core import models as core_models
 from datasets import logic as datasets
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, graphs, reads, writes
+from tests.support.identity import owned_by
 
 pytestmark = [pytest.mark.django_db(transaction=True), pytest.mark.asyncio]
 
@@ -31,7 +33,7 @@ IMAGE_PAIRS = [
 
 
 async def _run(
-    schema: kante.Schema, context: HttpContext, document: str, **variables
+    schema: kante.Schema, context: HttpContext, document: str, **variables: object
 ) -> dict:
     result = await schema.execute(
         document, variable_values=variables, context_value=context
@@ -42,7 +44,7 @@ async def _run(
 
 
 async def _refused(
-    schema: kante.Schema, context: HttpContext, document: str, **variables
+    schema: kante.Schema, context: HttpContext, document: str, **variables: object
 ) -> str:
     result = await schema.execute(
         document, variable_values=variables, context_value=context
@@ -52,7 +54,9 @@ async def _refused(
 
 
 @sync_to_async
-def _view(api_context, table_projector) -> core_models.Graph:
+def _view(
+    api_context: HttpContext, table_projector: TableProjector
+) -> core_models.Graph:
     request = api_context.request
     ends = models.StructureDescriptorInput(identifiers=[IMAGE])
     definition = models.GraphDefinitionInput(
@@ -69,15 +73,15 @@ def _view(api_context, table_projector) -> core_models.Graph:
     return materialize(
         definition,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="training pairs",
     )
 
 
 @sync_to_async
-def _pair(graph: core_models.Graph, table_projector, noisy: str, clean: str) -> int:
+def _pair(
+    graph: core_models.Graph, table_projector: TableProjector, noisy: str, clean: str
+) -> int:
     """One annotator pairs two images; the view is rebuilt so its drawing is consistent. Returns the log's horizon."""
     org = graph.organization
     claims.relate_structures(
@@ -112,7 +116,7 @@ def _plan(graph: core_models.Graph) -> dict:
 
 
 @sync_to_async
-def _weights(api_context) -> str:
+def _weights(api_context: HttpContext) -> str:
     request = api_context.request
     return str(
         BigFileStore.objects.create(
@@ -126,7 +130,7 @@ def _weights(api_context) -> str:
 
 
 async def test_a_run_keeps_the_pairs_a_model_learned_from(
-    api_schema, api_context, table_projector
+    api_schema: kante.Schema, api_context: HttpContext, table_projector: TableProjector
 ) -> None:
     graph = await _view(api_context, table_projector)
     await _pair(graph, table_projector, "noisy-1", "clean-1")

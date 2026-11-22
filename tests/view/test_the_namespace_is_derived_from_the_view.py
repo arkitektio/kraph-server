@@ -8,21 +8,26 @@ an address.
 
 import re
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine import namespace as namespace_module
+from graph_engine.input_models import GraphDefinitionInput
+from graph_engine.projection import TableProjector
 from tests.support import drawing, namespaces, reads, writes
+from tests.support.identity import owned_by
 
 
-def _cat(graph, key):
+def _cat(graph: core_models.Graph, key: str) -> core_models.Category:
     return core_models.Category.objects.get(graph=graph, key=key)
 
 
 @pytest.mark.django_db(transaction=True)
 def test_spec_declares_one_vertex_element_per_node_category(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     spec = namespace_module.namespace_spec(test_graph)
     assert spec.schema_name == test_graph.age_name
@@ -34,7 +39,7 @@ def test_spec_declares_one_vertex_element_per_node_category(
 
 @pytest.mark.django_db(transaction=True)
 def test_spec_expands_relations_per_admitted_endpoint_pair(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     spec = namespace_module.namespace_spec(test_graph)
     cell = _cat(test_graph, "Cell").pk
@@ -56,7 +61,7 @@ def test_spec_expands_relations_per_admitted_endpoint_pair(
 
 @pytest.mark.django_db(transaction=True)
 def test_spec_participation_encodes_the_drawn_direction(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     spec = namespace_module.namespace_spec(test_graph)
     cell = _cat(test_graph, "Cell").pk
@@ -75,7 +80,9 @@ def test_spec_participation_encodes_the_drawn_direction(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_spec_gives_measurement_categories_nothing(test_graph, table_projector) -> None:
+def test_spec_gives_measurement_categories_nothing(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     # Nothing draws a measurement, so a label would declare an element table that
     # is empty by construction. (Structure relations are drawn, RFC 0027:
     # `test_structures_are_drawn_where_a_view_mounts_them`.)
@@ -84,7 +91,9 @@ def test_spec_gives_measurement_categories_nothing(test_graph, table_projector) 
 
 
 @pytest.mark.django_db(transaction=True)
-def test_spec_refuses_an_overlong_label_by_name(test_graph, table_projector) -> None:
+def test_spec_refuses_an_overlong_label_by_name(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     long = "L" * 80
     core_models.Category.objects.filter(pk=_cat(test_graph, "AIS").pk).update(
         age_name=long
@@ -95,7 +104,7 @@ def test_spec_refuses_an_overlong_label_by_name(test_graph, table_projector) -> 
 
 @pytest.mark.django_db(transaction=True)
 def test_spec_refuses_a_vertex_label_that_is_a_participation_edge_label(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     core_models.Category.objects.filter(pk=_cat(test_graph, "AIS").pk).update(
         age_name="WENT_THROUGH"
@@ -106,7 +115,9 @@ def test_spec_refuses_a_vertex_label_that_is_a_participation_edge_label(
 
 @pytest.mark.django_db(transaction=True)
 def test_spec_open_descriptors_expand_and_the_cap_refuses_loudly(
-    test_graph, table_projector, monkeypatch
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Open both descriptors on one relation: every entity-like pair appears.
     relation = _cat(test_graph, "IS_CONNECTED_TO")
@@ -149,7 +160,7 @@ def _property_graph_labels(schema: str) -> set[str]:
 
 @pytest.mark.django_db(transaction=True)
 def test_materialize_builds_the_namespace_with_exactly_the_declared_labels(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     schema = str(test_graph.age_name)
     assert _schema_exists(schema), "materialize must leave the per-graph schema behind"
@@ -166,7 +177,9 @@ def test_materialize_builds_the_namespace_with_exactly_the_declared_labels(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_category_write_refreshes_the_namespace(test_graph, table_projector) -> None:
+def test_a_category_write_refreshes_the_namespace(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     core_models.EntityCategory.objects.create(
         graph=test_graph, age_name="Axon", key="Axon", label="Axon"
     )
@@ -182,7 +195,7 @@ def test_a_category_write_refreshes_the_namespace(test_graph, table_projector) -
 
 @pytest.mark.django_db(transaction=True)
 def test_refresh_is_idempotent_and_deleting_the_graph_drops_the_schema(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     table_projector.refresh_namespace(test_graph)
     table_projector.refresh_namespace(test_graph)
@@ -197,7 +210,7 @@ def test_refresh_is_idempotent_and_deleting_the_graph_drops_the_schema(
 
 @pytest.mark.django_db(transaction=True)
 def test_the_property_graph_answers_for_the_drawing(
-    test_graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     from django.db import connection
 
@@ -217,10 +230,15 @@ def test_the_property_graph_answers_for_the_drawing(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_smallest_schema_gets_a_working_namespace(
-    api_schema, simple_api_context, minimal_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    minimal_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     @sync_to_async
-    def the_spec():
+    def the_spec() -> tuple[
+        frozenset[str], tuple[namespace_module.EdgeElement, ...], set[str]
+    ]:
         spec = namespace_module.namespace_spec(minimal_graph)
         return (
             spec.vertex_labels,
@@ -236,7 +254,7 @@ async def test_the_smallest_schema_gets_a_working_namespace(
     specimen = await writes.create_entity(api_schema, simple_api_context, "Specimen")
 
     @sync_to_async
-    def match():
+    def match() -> list[tuple[object, ...]]:
         return namespaces.graph_table(
             minimal_graph, 'MATCH (s IS "Specimen") COLUMNS (s.__ref AS ref)'
         )
@@ -246,7 +264,7 @@ async def test_the_smallest_schema_gets_a_working_namespace(
 
 @pytest.mark.django_db(transaction=True)
 def test_open_descriptors_expand_and_closed_ones_do_not(
-    interactome_graph, table_projector
+    interactome_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     spec = namespace_module.namespace_spec(interactome_graph)
     open_pairs = {
@@ -270,7 +288,10 @@ def test_open_descriptors_expand_and_closed_ones_do_not(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_open_relation_between_any_pair_renders(
-    api_schema, simple_api_context, interactome_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    interactome_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     complex_ = await writes.create_entity(api_schema, simple_api_context, "Complex")
     site = await writes.create_entity(api_schema, simple_api_context, "Site")
@@ -279,7 +300,7 @@ async def test_an_open_relation_between_any_pair_renders(
     )
 
     @sync_to_async
-    def match():
+    def match() -> list[tuple[object, ...]]:
         return namespaces.graph_table(
             interactome_graph,
             'MATCH (a)-[IS "INTERACTS_WITH"]->(b) COLUMNS (a.__label AS source, b.__label AS target)',
@@ -292,7 +313,7 @@ async def test_an_open_relation_between_any_pair_renders(
 
 @pytest.mark.django_db(transaction=True)
 def test_protocol_event_categories_land_in_the_namespace(
-    lab_graph, table_projector
+    lab_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     # Created through the ORM *after* materialize — the label being present is
     # the category-write signal having refreshed the namespace.
@@ -321,7 +342,10 @@ def test_protocol_event_categories_land_in_the_namespace(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_protocol_event_renders_as_two_hops(
-    api_schema, simple_api_context, lab_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    lab_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     sample = await writes.create_entity(api_schema, simple_api_context, "Sample")
     slide = await writes.create_entity(api_schema, simple_api_context, "Slide")
@@ -335,7 +359,7 @@ async def test_a_protocol_event_renders_as_two_hops(
     )
 
     @sync_to_async
-    def match():
+    def match() -> list[tuple[object, ...]]:
         return namespaces.graph_table(
             lab_graph,
             'MATCH (s IS "Sample")-[i IS "SUBJECTED_IN"]->(f IS "Fixation")-[o IS "PRODUCED"]->(t IS "Slide") COLUMNS (s.__ref AS sample, i.__eprops ->> \'role\' AS in_role, o.__eprops ->> \'role\' AS out_role, t.__ref AS slide)',
@@ -347,15 +371,19 @@ async def test_a_protocol_event_renders_as_two_hops(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_shared_word_draws_in_every_declaring_view(
-    api_schema, simple_api_context, cytology_graph, oncology_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    cytology_graph: core_models.Graph,
+    oncology_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """One claim, two graphs: the write fans out, and each namespace answers
     for its own view — same ref, that view's own category."""
     cell = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     @sync_to_async
-    def per_view():
-        results = {}
+    def per_view() -> tuple[dict[str, list[tuple[object, ...]]], int, int]:
+        results: dict[str, list[tuple[object, ...]]] = {}
         for graph in (cytology_graph, oncology_graph):
             rows = namespaces.graph_table(
                 graph,
@@ -377,14 +405,18 @@ async def test_a_shared_word_draws_in_every_declaring_view(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_word_only_one_view_declares_stays_in_that_view(
-    api_schema, simple_api_context, cytology_graph, oncology_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    cytology_graph: core_models.Graph,
+    oncology_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     cell = await writes.create_entity(api_schema, simple_api_context, "Cell")
     tumor = await writes.create_entity(api_schema, simple_api_context, "Tumor")
     await writes.create_relation(api_schema, simple_api_context, "part_of", cell, tumor)
 
     @sync_to_async
-    def check():
+    def check() -> tuple[list[tuple[object, ...]], set[str]]:
         oncology_rows = namespaces.graph_table(
             oncology_graph,
             'MATCH (a IS "Cell")-[IS "PART_OF"]->(b IS "Tumor") COLUMNS (a.__ref AS cell, b.__ref AS tumor)',
@@ -403,7 +435,9 @@ async def test_a_word_only_one_view_declares_stays_in_that_view(
 
 @pytest.mark.django_db(transaction=True)
 def test_render_labels_resolve_against_the_view_in_scope(
-    cytology_graph, oncology_graph, table_projector
+    cytology_graph: core_models.Graph,
+    oncology_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """The same plan means different things per view — and an undeclared word
     is refused by name, not silently empty."""
@@ -433,7 +467,11 @@ def test_render_labels_resolve_against_the_view_in_scope(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_same_metrics_read_differently_under_each_views_rule(
-    api_schema, simple_api_context, cytology_graph, oncology_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    cytology_graph: core_models.Graph,
+    oncology_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """Same claims, different knowledge — the derivation-rule half.
 
@@ -461,8 +499,8 @@ async def test_the_same_metrics_read_differently_under_each_views_rule(
     )
 
     @sync_to_async
-    def sizes():
-        results = {}
+    def sizes() -> dict[str, list[tuple[object, ...]]]:
+        results: dict[str, list[tuple[object, ...]]] = {}
         for graph in (cytology_graph, oncology_graph):
             rows = namespaces.graph_table(
                 graph,
@@ -481,7 +519,11 @@ async def test_the_same_metrics_read_differently_under_each_views_rule(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_view_reads_another_words_claims_under_its_own_name(
-    api_schema, simple_api_context, cytology_graph, census_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    cytology_graph: core_models.Graph,
+    census_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """Same claims, different knowledge — the definitional half.
 
@@ -493,7 +535,9 @@ async def test_a_view_reads_another_words_claims_under_its_own_name(
     cell = await writes.create_entity(api_schema, simple_api_context, "Cell")
 
     @sync_to_async
-    def per_view():
+    def per_view() -> tuple[
+        set[str], list[tuple[object, ...]], list[tuple[object, ...]]
+    ]:
         census_labels = namespaces.property_graph_labels(census_graph.age_name)
         cytology_rows = namespaces.graph_table(
             cytology_graph,
@@ -519,21 +563,19 @@ HANDLE = re.compile(r"^g[0-9a-f]{32}$")
 
 
 def test_two_graphs_with_one_name_get_distinct_random_handles(
-    transactional_db, table_projector, minimal_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    minimal_schema: GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> None:
     """Same name, same organization, twice — two handles, neither derived from the name."""
     from graph_engine.materialize import materialize
 
     request = authenticated_context.request
-    kwargs = dict(
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
-        name="Twins",
-    )
+    owner = owned_by(request)
 
-    first = materialize(minimal_schema, table_projector, **kwargs)
-    second = materialize(minimal_schema, table_projector, **kwargs)
+    first = materialize(minimal_schema, table_projector, name="Twins", **owner)
+    second = materialize(minimal_schema, table_projector, name="Twins", **owner)
 
     assert first.pk != second.pk
     assert first.age_name != second.age_name
@@ -549,7 +591,9 @@ def test_two_graphs_with_one_name_get_distinct_random_handles(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_graph_argument_is_a_primary_key_not_the_handle(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """`graph: "<age_name>"` is refused; the same read by id succeeds."""
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -570,6 +614,7 @@ async def test_graph_argument_is_a_primary_key_not_the_handle(
         context_value=simple_api_context,
     )
     assert by_id.errors is None, f"GraphQL errors: {by_id.errors}"
+    assert by_id.data is not None
     assert by_id.data["node"]["id"] == entity_id
 
 
@@ -589,7 +634,7 @@ def test_a_graph_row_needs_no_handle_to_be_created(
 
 @pytest.mark.django_db(transaction=True)
 def test_deleting_a_graph_row_drops_its_namespace(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     table_projector.draw_node(
         test_graph,

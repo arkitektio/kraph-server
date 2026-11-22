@@ -9,6 +9,7 @@ from __future__ import annotations
 import kante
 import pytest
 from asgiref.sync import sync_to_async
+from authentikate.models import Organization
 from django.db import connection, transaction
 from django.db.utils import IntegrityError
 from kante.context import HttpContext
@@ -23,7 +24,9 @@ REFUSED = IntegrityError
 
 @pytest.mark.django_db(transaction=True)
 def test_a_words_identity_cannot_be_rewritten(
-    organization, roi_kind, length_category
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
 ) -> None:
     """RFC 0022: the identity columns every claim references are immutable in the
     database, not by convention in one resolver."""
@@ -48,7 +51,9 @@ def test_a_words_identity_cannot_be_rewritten(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_words_presentation_is_not_evidence(
-    organization, roi_kind, length_category
+    organization: Organization,
+    roi_kind: evidence_models.StructureKind,
+    length_category: evidence_models.MetricKind,
 ) -> None:
     """How a word shows may change in place: no rule reads it, no claim references it."""
     term = writer.ensure_term(organization, "ENTITY", "AIS")
@@ -68,7 +73,9 @@ def test_a_words_presentation_is_not_evidence(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_identity_guard_honours_the_redaction_hatch(organization) -> None:
+def test_the_identity_guard_honours_the_redaction_hatch(
+    organization: Organization,
+) -> None:
     term = writer.ensure_term(organization, "ENTITY", "Misspelt")
     with transaction.atomic():
         with connection.cursor() as cursor:
@@ -111,6 +118,7 @@ async def test_declaring_a_word_that_exists_describes_it_rather_than_duplicating
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     created = result.data["createTerm"]
     assert created["id"] == existing_id, (
         "The same word is the same term — a second row would orphan every claim on the first"
@@ -158,6 +166,7 @@ async def test_the_same_word_under_two_kinds_is_two_terms(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["createTerm"]["id"] != str(category.term_id)
 
 
@@ -192,6 +201,7 @@ async def test_updating_a_term_edits_its_presentation_only(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     updated = result.data["updateTerm"]
     assert updated["label"] == "AIS (curated)"
     assert updated["key"] == "AIS", "The word itself is untouched"

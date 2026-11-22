@@ -15,12 +15,13 @@ graph deletion trip the schema-version foreign key.
 
 import gc
 
-from django.db.models.signals import post_delete, post_save, pre_delete
+from django.db import models
+from django.db.models.signals import ModelSignal, post_delete, post_save, pre_delete
 
 from core import models as core_models
 
 
-def _receiver_modules(signal, sender) -> set[str]:
+def _receiver_modules(signal: ModelSignal, sender: type[models.Model]) -> set[str]:
     sync_receivers, async_receivers = signal._live_receivers(sender)
     return {receiver.__module__ for receiver in [*sync_receivers, *async_receivers]}
 

@@ -23,7 +23,7 @@ erroring the query.
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Awaitable, Callable, Iterable
+from collections.abc import Awaitable, Callable, Iterable, Iterator
 from contextvars import ContextVar
 
 from asgiref.sync import sync_to_async
@@ -260,7 +260,9 @@ def _batch_known_about_nodes() -> Callable[
             answers: dict[tuple[int | None, str], panel.Known] = {}
             for graph_id, refs in refs_by_graph.items():
                 for ref, known in zip(
-                    refs, panel.known_about(refs, graph=graphs.get(graph_id))
+                    refs,
+                    panel.known_about(refs, graph=graphs.get(graph_id)),
+                    strict=True,
                 ):
                     answers[(graph_id, ref)] = known
             return answers
@@ -395,7 +397,7 @@ class LoaderExtension(SchemaExtension):
     tenant boundary.
     """
 
-    def on_operation(self):
+    def on_operation(self) -> Iterator[None]:
         """Install per-operation loaders, then discard them."""
         token = _loaders.set(build_loaders())
         try:

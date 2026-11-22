@@ -7,11 +7,17 @@ tenant boundary, N queries per batch, and one dangling id failing every id
 batched alongside it.
 """
 
+from collections.abc import Awaitable, Callable
+from typing import TypeVar
+
 import pytest
 from asgiref.sync import sync_to_async
+from django.db.models import Model
 
 from api import loaders
 from core import models as core_models
+
+Row = TypeVar("Row", bound=Model)
 
 
 @sync_to_async
@@ -83,10 +89,12 @@ async def test_a_batch_is_one_query(test_graph: core_models.Graph) -> None:
     calls: list[list] = []
     original = loaders._batch_by_pk
 
-    def counting(model, field="id"):
+    def counting(
+        model: type[Row], field: str = "id"
+    ) -> Callable[[list[loaders.PKType]], Awaitable[list[Row | None]]]:
         inner = original(model, field)
 
-        async def load(keys):
+        async def load(keys: list[loaders.PKType]) -> list[Row | None]:
             calls.append(list(keys))
             return await inner(keys)
 

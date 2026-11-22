@@ -10,17 +10,21 @@ reproject.
 """
 
 import uuid
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from authentikate.models import Organization
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import state as state_module
 from evidence import writer
 from graph_engine import projector
+from graph_engine.projection import TableProjector
 from tests.support import reads, writes
 
 
@@ -31,7 +35,7 @@ def shared_across_two_graphs(
     graph_b: core_models.Graph,
     entity_category_a: core_models.EntityCategory,
     entity_category_b: core_models.EntityCategory,
-    make_node,
+    make_node: Callable[[core_models.Category], str],
     roi_kind: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, str, str]:
@@ -134,7 +138,7 @@ def test_a_graph_with_no_informed_entity_is_not_in_the_fan_out(
     graph_a: core_models.Graph,
     graph_b: core_models.Graph,
     entity_category_a: core_models.EntityCategory,
-    make_node,
+    make_node: Callable[[core_models.Category], str],
     roi_kind: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> None:
@@ -179,11 +183,11 @@ def test_the_fan_out_stops_at_the_organization(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_one_recorded_metric_moves_both_projections(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     second_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The claim, checked through the mutation rather than around it.
 
@@ -247,7 +251,7 @@ def two_entities_one_structure(
     organization: Organization,
     graph_a: core_models.Graph,
     entity_category_a: core_models.EntityCategory,
-    make_node,
+    make_node: Callable[[core_models.Category], str],
     roi_category_a: evidence_models.StructureKind,
     assertion: evidence_models.Assertion,
 ) -> tuple[evidence_models.Structure, list[str]]:
@@ -283,7 +287,7 @@ def test_dirty_ignores_other_graphs_entities(
     graph_a: core_models.Graph,
     graph_b: core_models.Graph,
     entity_category_b: core_models.EntityCategory,
-    make_node,
+    make_node: Callable[[core_models.Category], str],
     two_entities_one_structure: tuple[evidence_models.Structure, list[str]],
     assertion: evidence_models.Assertion,
 ) -> None:
@@ -334,7 +338,7 @@ def test_bulk_ingest_folds_per_metric_but_projects_once(
     organization: Organization,
     graph_a: core_models.Graph,
     entity_category_a: core_models.EntityCategory,
-    make_node,
+    make_node: Callable[[core_models.Category], str],
     roi_category_a: evidence_models.StructureKind,
     length_category: evidence_models.MetricKind,
     assertion: evidence_models.Assertion,

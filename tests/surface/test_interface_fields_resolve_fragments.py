@@ -222,6 +222,7 @@ async def test_interface_fragment_does_not_fan_out_into_queries(
         await sync_to_async(captured.__exit__)(None, None, None)
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert len(result.data["graphQueries"]) == rows
 
     selects = [

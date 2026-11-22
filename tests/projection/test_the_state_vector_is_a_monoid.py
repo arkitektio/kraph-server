@@ -108,13 +108,13 @@ def test_incremental_merge_equals_full_recompute(
         organization, linked_structure.kind, "vector_length", ValueKind.STRING
     )
 
-    for value, offset in zip(values, offsets):
+    for value, offset in zip(values, offsets, strict=False):
         metric = _record(
             organization, linked_structure, length_category, assertion, value, offset
         )
         state_module.merge(metric, [ENTITY_REF])
 
-    for label, offset in zip(labels, offsets[len(values) :]):
+    for label, offset in zip(labels, offsets[len(values) :], strict=True):
         metric = _record(
             organization, linked_structure, label_term, assertion, label, offset
         )

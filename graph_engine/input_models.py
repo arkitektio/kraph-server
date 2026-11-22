@@ -1,6 +1,6 @@
 import re
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Optional, Protocol
@@ -759,8 +759,8 @@ def parse_observed_at(value: JSONValue | datetime) -> datetime | None:
     if isinstance(value, str):
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            raise ValueError(f"Invalid observed_at format: {value}")
+        except ValueError as err:
+            raise ValueError(f"Invalid observed_at format: {value}") from err
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
     raise ValueError(f"Unsupported observed_at type: {type(value)}")
 
@@ -882,7 +882,7 @@ class SemanticVersion(str):
     """A semantic version string that validates on assignment."""
 
     @classmethod
-    def __get_validators__(cls):
+    def __get_validators__(cls) -> Iterator[Callable[[object], str]]:
         yield cls.validate
 
     @classmethod
@@ -1442,7 +1442,7 @@ class PropertyDefinitionInput(StrictModel):
 
     @model_validator(mode="before")
     @classmethod
-    def populate_value_kind_from_legacy_type(cls, data):
+    def populate_value_kind_from_legacy_type(cls, data: object) -> object:
         """Accept the old `type` spelling and translate it to `value_kind`.
 
         The key is **consumed**, not merely read. `StrictModel` forbids unknown
@@ -1507,7 +1507,7 @@ class PropertyDefinitionInput(StrictModel):
         return v.upper()
 
     @model_validator(mode="after")
-    def validate_rule_presence(self):
+    def validate_rule_presence(self) -> "PropertyDefinitionInput":
         """If using ROLLUP, a rule definition is mandatory."""
         if self.derivation == DerivationType.ROLLUP and not self.rule:
             raise ValueError(
@@ -1516,7 +1516,7 @@ class PropertyDefinitionInput(StrictModel):
         return self
 
     @model_validator(mode="after")
-    def validate_aggregation_result_type(self):
+    def validate_aggregation_result_type(self) -> "PropertyDefinitionInput":
         """
         Validate that the property type is compatible with the aggregation result.
 
@@ -2151,7 +2151,7 @@ class UpdateNaturalEventCategoryInput(UpdateDefinitionInput):
     )
 
     @model_validator(mode="after")
-    def definition_and_clear_are_exclusive(self):
+    def definition_and_clear_are_exclusive(self) -> "UpdateNaturalEventCategoryInput":
         if self.definition is not None and self.clear_definition:
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
@@ -2196,7 +2196,7 @@ class UpdateProtocolEventCategoryInput(UpdateDefinitionInput):
     )
 
     @model_validator(mode="after")
-    def definition_and_clear_are_exclusive(self):
+    def definition_and_clear_are_exclusive(self) -> "UpdateProtocolEventCategoryInput":
         if self.definition is not None and self.clear_definition:
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
@@ -2438,7 +2438,7 @@ class UpdateRelationCategoryInput(UpdateDefinitionInput):
     )
 
     @model_validator(mode="after")
-    def definition_and_clear_are_exclusive(self):
+    def definition_and_clear_are_exclusive(self) -> "UpdateRelationCategoryInput":
         if self.definition is not None and self.clear_definition:
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
@@ -2481,7 +2481,7 @@ class UpdateMeasurementCategoryInput(UpdateDefinitionInput):
     )
 
     @model_validator(mode="after")
-    def definition_and_clear_are_exclusive(self):
+    def definition_and_clear_are_exclusive(self) -> "UpdateMeasurementCategoryInput":
         if self.definition is not None and self.clear_definition:
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self
@@ -2522,7 +2522,9 @@ class UpdateStructureRelationCategoryInput(UpdateDefinitionInput):
     )
 
     @model_validator(mode="after")
-    def definition_and_clear_are_exclusive(self):
+    def definition_and_clear_are_exclusive(
+        self,
+    ) -> "UpdateStructureRelationCategoryInput":
         if self.definition is not None and self.clear_definition:
             raise ValueError("Pass a new `definition` or `clearDefinition`, not both.")
         return self

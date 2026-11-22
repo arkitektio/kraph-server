@@ -8,6 +8,7 @@ is a droppable cache of them.
 """
 
 import uuid
+from collections.abc import Awaitable, Callable
 
 import kante
 import pytest
@@ -16,6 +17,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
+from evidence.panel import Known
 from tests.support import reads, rules, writes
 
 CLASSIFY_NODES = """
@@ -72,6 +74,7 @@ async def _structure(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertStructureExists"]["structure"]["id"], object_id
 
 
@@ -99,6 +102,7 @@ async def _entity(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertEntityExists"]["instance"]["id"]
 
 
@@ -107,6 +111,7 @@ async def _panel(api_schema: kante.Schema, ctx: HttpContext, structure_id: str) 
         PANEL, variable_values={"id": structure_id}, context_value=ctx
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["structure"]
 
 
@@ -443,10 +448,10 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
     batches: list[list] = []
     original = loaders._batch_known_about_nodes
 
-    def counting():
+    def counting() -> Callable[[list[loaders.PKType]], Awaitable[list[Known]]]:
         inner = original()
 
-        async def load(keys):
+        async def load(keys: list[loaders.PKType]) -> list[Known]:
             batches.append(list(keys))
             return await inner(keys)
 
@@ -473,6 +478,7 @@ async def test_the_panel_does_not_scale_with_the_number_of_subjects(
         loaders._CUSTOM_LOADER_FACTORIES["known_about_node"] = original
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert len(result.data["structures"]) == 5
 
     assert len(batches) == 1, (
@@ -513,6 +519,7 @@ async def test_each_member_of_a_component_shows_its_own_evidence(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     instance = result.data["instance"]
 
     assert [row["object"] for row in instance["evidence"]] == [first_object], (
@@ -528,7 +535,9 @@ async def test_each_member_of_a_component_shows_its_own_evidence(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_connections_read_in_pages_that_add_up_to_the_whole(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """`connections(pagination:)` and `connectionCount`, on the claim and on its drawing.
 

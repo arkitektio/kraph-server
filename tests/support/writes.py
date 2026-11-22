@@ -120,12 +120,13 @@ async def execute(
     ctx: HttpContext,
     document: str,
     variables: dict[str, Any] | None = None,
-) -> Any:
+) -> dict[str, Any]:
     """Run one document and hand back its data; a GraphQL error is a failed test."""
     result = await api_schema.execute(
         document, variable_values=variables or {}, context_value=ctx
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data
 
 
@@ -135,7 +136,7 @@ async def _mutate(
     document: str,
     field: str,
     payload: dict[str, Any],
-) -> Any:
+) -> dict[str, Any]:
     return (await execute(api_schema, ctx, document, {"input": payload}))[field]
 
 

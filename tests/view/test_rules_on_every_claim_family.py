@@ -6,9 +6,12 @@ documents that must build, the ones that must be refused, and the behaviour
 each family's rules drive.
 """
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
+import kante
 import pytest
+from kante.context import HttpContext
 from pydantic import ValidationError
 
 from core import models as core_models
@@ -16,7 +19,9 @@ from evidence import models as evidence_models
 from evidence import writer
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, graphs, rules
+from tests.support.identity import owned_by
 
 DEC5 = datetime(2026, 12, 5, tzinfo=UTC)
 
@@ -26,14 +31,18 @@ def _definition_input(*rule_dicts: dict) -> models.CategoryDefinitionInput:
 
 
 def _entity_definition(
-    key: str, definition=None, properties=()
+    key: str,
+    definition: models.CategoryDefinitionInput | None = None,
+    properties: Iterable[models.PropertyDefinitionInput] = (),
 ) -> models.EntityDefinitionInput:
     return models.EntityDefinitionInput(
         key=key, definition=definition, property_definitions=list(properties)
     )
 
 
-def _relation(key: str, definition=None) -> models.RelationDefinitionInput:
+def _relation(
+    key: str, definition: models.CategoryDefinitionInput | None = None
+) -> models.RelationDefinitionInput:
     return models.RelationDefinitionInput(
         key=key,
         source=models.EntityDescriptorInput(keys=["Cell"]),
@@ -42,7 +51,9 @@ def _relation(key: str, definition=None) -> models.RelationDefinitionInput:
     )
 
 
-def _event(key: str, definition=None) -> models.EventDefinitionInput:
+def _event(
+    key: str, definition: models.CategoryDefinitionInput | None = None
+) -> models.EventDefinitionInput:
     return models.EventDefinitionInput(
         key=key,
         kind=models.EventKind.INTRINSIC,
@@ -53,7 +64,7 @@ def _event(key: str, definition=None) -> models.EventDefinitionInput:
 
 
 def _structure_relation(
-    key: str, definition=None
+    key: str, definition: models.CategoryDefinitionInput | None = None
 ) -> models.StructureRelationDefinitionInput:
     return models.StructureRelationDefinitionInput(
         key=key,
@@ -63,7 +74,9 @@ def _structure_relation(
     )
 
 
-def _measurement(key: str, definition=None) -> models.MeasurementDefinitionInput:
+def _measurement(
+    key: str, definition: models.CategoryDefinitionInput | None = None
+) -> models.MeasurementDefinitionInput:
     return models.MeasurementDefinitionInput(
         key=key,
         source=models.StructureDescriptorInput(identifiers=["ROI"]),
@@ -73,7 +86,12 @@ def _measurement(key: str, definition=None) -> models.MeasurementDefinitionInput
 
 
 def _schema(
-    *, entities=(), relations=(), events=(), structure_relations=(), measurements=()
+    *,
+    entities: Iterable[models.EntityDefinitionInput] = (),
+    relations: Iterable[models.RelationDefinitionInput] = (),
+    events: Iterable[models.EventDefinitionInput] = (),
+    structure_relations: Iterable[models.StructureRelationDefinitionInput] = (),
+    measurements: Iterable[models.MeasurementDefinitionInput] = (),
 ) -> models.GraphDefinitionInput:
     return models.GraphDefinitionInput(
         system_version="1.0.0",
@@ -365,15 +383,15 @@ def test_bad_schemas_are_refused() -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_materialize_stores_definitions_on_every_family(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     graph = materialize(
         good_schemas()["all-five-defined"],
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="all-five",
     )
 
@@ -396,15 +414,15 @@ def test_materialize_stores_definitions_on_every_family(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_structure_relation_may_derive_from_other_words(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     graph = materialize(
         good_schemas()["structure-relation-derives-other-words"],
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="sr-derives",
     )
     category = core_models.StructureRelationCategory.objects.get(
@@ -419,7 +437,7 @@ def test_a_structure_relation_may_derive_from_other_words(
 # --------------------------------------------------------------------------- behavior: the rules govern the claim lists
 
 
-def _sr_listed(category) -> set:
+def _sr_listed(category: core_models.Category) -> set:
     from api.queries import _edges
 
     links = _edges.links_for_category(
@@ -430,7 +448,7 @@ def _sr_listed(category) -> set:
     return {link.pk for link in links}
 
 
-def _measurement_listed(category) -> set:
+def _measurement_listed(category: core_models.Category) -> set:
     from api.queries import _edges
 
     links = _edges.links_for_category(
@@ -441,15 +459,15 @@ def _measurement_listed(category) -> set:
 
 @pytest.mark.django_db(transaction=True)
 def test_structure_relation_claims_fold_under_the_categorys_rules(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     graph = materialize(
         good_schemas()["structure-relation-scoped"],
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="sr-scoped",
     )
     org = graph.organization
@@ -480,15 +498,15 @@ def test_structure_relation_claims_fold_under_the_categorys_rules(
 
 @pytest.mark.django_db(transaction=True)
 def test_measurement_claims_fold_under_the_categorys_rules(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     graph = materialize(
         good_schemas()["measurement-scoped"],
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="m-scoped",
     )
     org = graph.organization
@@ -508,15 +526,15 @@ def test_measurement_claims_fold_under_the_categorys_rules(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_primitive_category_still_lists_everything(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     request = authenticated_context.request
     graph = materialize(
         good_schemas()["primitive-everything"],
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="primitive-zoo",
     )
     org = graph.organization
@@ -551,20 +569,21 @@ CREATE_PROTOCOL_EVENT = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_update_structure_relation_category_writes_the_rule(
-    api_schema, simple_api_context, table_projector, authenticated_context
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     from asgiref.sync import sync_to_async
 
     request = authenticated_context.request
 
     @sync_to_async
-    def build():
+    def build() -> str:
         graph = materialize(
             good_schemas()["primitive-everything"],
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="sr-update",
         )
         return str(
@@ -587,6 +606,7 @@ async def test_update_structure_relation_category_writes_the_rule(
         context_value=simple_api_context,
     )
     assert updated.errors is None, f"GraphQL errors: {updated.errors}"
+    assert updated.data is not None
     read_back = updated.data["updateStructureRelationCategory"]["definition"]["rules"][
         0
     ]["when"]
@@ -611,7 +631,10 @@ async def test_update_structure_relation_category_writes_the_rule(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_protocol_event_categorys_rules_govern_its_participations(
-    api_schema, simple_api_context, table_projector, authenticated_context
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     from asgiref.sync import sync_to_async
 
@@ -620,13 +643,11 @@ async def test_a_protocol_event_categorys_rules_govern_its_participations(
     request = authenticated_context.request
 
     @sync_to_async
-    def build():
+    def build() -> str:
         graph = materialize(
             good_schemas()["primitive-everything"],
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="protocol-rules",
         )
         return str(graph.pk)
@@ -652,13 +673,14 @@ async def test_a_protocol_event_categorys_rules_govern_its_participations(
         context_value=simple_api_context,
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
+    assert made.data is not None
     read_back = made.data["createProtocolEventCategory"]["definition"]["rules"][0][
         "when"
     ]
     assert {"field": "APP", "operator": "IS", "value": "protocol-runner"} in read_back
 
     @sync_to_async
-    def story():
+    def story() -> tuple[int, int]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         cell = claims.mint(org, "Cell", "peter")

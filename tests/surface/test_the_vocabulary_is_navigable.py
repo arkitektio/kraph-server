@@ -91,6 +91,7 @@ async def test_a_category_and_its_term_navigate_to_each_other(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     term = result.data["entityCategory"]["term"]
     assert term is not None, "Every category declares a word"
     assert (term["kind"], term["key"]) == ("ENTITY", "AIS")
@@ -122,6 +123,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     term_id = created.data["createTerm"]["id"]
 
     hidden = await api_schema.execute(
@@ -130,6 +132,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert hidden.errors is None, f"GraphQL errors: {hidden.errors}"
+    assert hidden.data is not None
     assert hidden.data["updateTerm"]["hidden"] is True
 
     offered = await api_schema.execute(
@@ -138,6 +141,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert offered.errors is None, f"GraphQL errors: {offered.errors}"
+    assert offered.data is not None
     assert key not in {row["key"] for row in offered.data["terms"]}, (
         "A hidden word is no longer offered"
     )
@@ -148,6 +152,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert put_away.errors is None, f"GraphQL errors: {put_away.errors}"
+    assert put_away.data is not None
     assert key in {row["key"] for row in put_away.data["terms"]}, (
         "But it is still the organization's word"
     )
@@ -158,6 +163,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert relabelled.errors is None, f"GraphQL errors: {relabelled.errors}"
+    assert relabelled.data is not None
     assert relabelled.data["updateTerm"]["hidden"] is True, (
         "An update that does not mention `hidden` leaves it alone"
     )
@@ -168,6 +174,7 @@ async def test_a_hidden_word_is_put_away_not_gone(
         context_value=simple_api_context,
     )
     assert shown.errors is None, f"GraphQL errors: {shown.errors}"
+    assert shown.data is not None
     assert shown.data["updateTerm"]["hidden"] is False, "And it can be shown again"
 
 
@@ -216,6 +223,7 @@ async def test_declaring_a_hidden_word_shows_it_but_claiming_under_it_does_not(
         context_value=simple_api_context,
     )
     assert declared.errors is None, f"GraphQL errors: {declared.errors}"
+    assert declared.data is not None
     assert declared.data["createTerm"]["id"] == str(category.term_id), (
         "Declaring finds the same word"
     )
@@ -249,6 +257,7 @@ async def test_terms_can_be_filtered_by_kind_and_by_whether_a_graph_speaks_them(
         context_value=simple_api_context,
     )
     assert entities.errors is None, f"GraphQL errors: {entities.errors}"
+    assert entities.data is not None
     assert {row["kind"] for row in entities.data["terms"]} == {"ENTITY"}
     assert key in {row["key"] for row in entities.data["terms"]}
 
@@ -258,6 +267,7 @@ async def test_terms_can_be_filtered_by_kind_and_by_whether_a_graph_speaks_them(
         context_value=simple_api_context,
     )
     assert undeclared.errors is None, f"GraphQL errors: {undeclared.errors}"
+    assert undeclared.data is not None
     keys = {row["key"] for row in undeclared.data["terms"]}
     assert key in keys, "A word no graph declares is still the organization's"
     assert "AIS" not in keys, "And one every graph declares is not in that list"
@@ -304,6 +314,7 @@ async def test_a_word_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert other.errors is None, f"GraphQL errors: {other.errors}"
+    assert wanted.data is not None
     wanted_id = wanted.data["createTerm"]["id"]
 
     by_id = await api_schema.execute(
@@ -312,6 +323,7 @@ async def test_a_word_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert by_id.errors is None, f"GraphQL errors: {by_id.errors}"
+    assert by_id.data is not None
     assert [row["id"] for row in by_id.data["terms"]] == [wanted_id]
 
     by_label = await api_schema.execute(
@@ -320,6 +332,7 @@ async def test_a_word_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert by_label.errors is None, f"GraphQL errors: {by_label.errors}"
+    assert by_label.data is not None
     assert [row["id"] for row in by_label.data["terms"]] == [wanted_id]
 
     by_description = await api_schema.execute(
@@ -328,7 +341,9 @@ async def test_a_word_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert by_description.errors is None, f"GraphQL errors: {by_description.errors}"
+    assert by_description.data is not None
     assert wanted_id in {row["id"] for row in by_description.data["terms"]}
+    assert other.data is not None
     assert other.data["createTerm"]["id"] not in {
         row["id"] for row in by_description.data["terms"]
     }
@@ -365,6 +380,7 @@ async def test_a_kind_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert kinds.errors is None, f"GraphQL errors: {kinds.errors}"
+    assert kinds.data is not None
     assert [row["id"] for row in kinds.data["structureKinds"]] == [roi_id]
 
     kinds = await api_schema.execute(
@@ -373,6 +389,7 @@ async def test_a_kind_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert kinds.errors is None, f"GraphQL errors: {kinds.errors}"
+    assert kinds.data is not None
     assert [row["identifier"] for row in kinds.data["structureKinds"]] == ["@mikro/roi"]
 
     metrics = await api_schema.execute(
@@ -381,6 +398,7 @@ async def test_a_kind_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert metrics.errors is None, f"GraphQL errors: {metrics.errors}"
+    assert metrics.data is not None
     assert [row["id"] for row in metrics.data["metricKinds"]] == [length_id]
 
     metrics = await api_schema.execute(
@@ -389,4 +407,5 @@ async def test_a_kind_is_findable_by_id_and_by_text(
         context_value=simple_api_context,
     )
     assert metrics.errors is None, f"GraphQL errors: {metrics.errors}"
+    assert metrics.data is not None
     assert [row["key"] for row in metrics.data["metricKinds"]] == ["vector_length"]

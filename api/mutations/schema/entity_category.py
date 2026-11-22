@@ -14,11 +14,17 @@ from kante.types import Info
 
 from api import inputs, types
 from core import models
+from core.managers import CategoryManager
+from graph_engine.input_models import UpdateEntityCategoryInput
 
 from ._category import create_category, delete_category, update_category
 
 
-def _patch_entity(item, model, manager) -> bool:
+def _patch_entity(
+    item: models.EntityCategory,
+    model: UpdateEntityCategoryInput,
+    manager: CategoryManager[models.Category],
+) -> bool:
     """An entity category's patch is its manager's, because it writes more.
 
     The manager saves, so this reports `True` and `update_category` does not save

@@ -23,8 +23,10 @@ for a whole organization, so rebuilding one graph's rows would leave the map hal
 old and half new with nothing saying which.
 """
 
+from typing import Any
+
 from authentikate.models import Organization
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from core import asserted_terms
 
@@ -34,7 +36,7 @@ class Command(BaseCommand):
 
     help = "Rebuild `CategoryAssertedTerm` from the categories' definitions."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument(
             "--organization",
@@ -49,7 +51,7 @@ class Command(BaseCommand):
             help="Report disagreement between the index and the definitions without writing anything.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Rebuild, or report."""
         if not options["organization"] and not options["all"]:
             raise CommandError(

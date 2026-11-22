@@ -14,7 +14,9 @@ roles while the same category created through `materialize` had the declared one
 Two creation paths for one row, disagreeing about what the row means.
 """
 
+import kante
 import pytest
+from kante.context import HttpContext
 
 from core import models as core_models
 from tests.support import graphs
@@ -35,7 +37,7 @@ CREATE_NATURAL_EVENT = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     graph_id = await graphs.graph_declaring(
         api_schema, simple_api_context, "Cell", name="protocol-roles"
@@ -61,6 +63,7 @@ async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
+    assert made.data is not None
     payload = made.data["createProtocolEventCategory"]
     assert [role["role"] for role in payload["inputs"]] == ["subject"], (
         "the roles a category was declared with are the roles it reports"
@@ -79,7 +82,7 @@ async def test_a_protocol_event_category_keeps_the_roles_it_was_created_with(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_natural_event_category_keeps_the_roles_it_was_created_with(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """The same property, asserted for the other event kind, because the two
     mutations were copies of one module and a field could go missing from one alone."""
@@ -110,6 +113,7 @@ async def test_a_natural_event_category_keeps_the_roles_it_was_created_with(
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
+    assert made.data is not None
     category = await core_models.NaturalEventCategory.objects.aget(
         pk=made.data["createNaturalEventCategory"]["id"]
     )

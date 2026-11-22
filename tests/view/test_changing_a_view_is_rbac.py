@@ -5,13 +5,17 @@ Reads and instance writes are untouched: they stay organization-scoped.
 History: `Graph.rules`, per-action allow/deny lists, are gone.
 """
 
+from types import SimpleNamespace
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
-from authentikate.models import Membership, User
+from authentikate.models import Membership, Organization, User
 from kante.context import HttpContext
+from strawberry.types import ExecutionResult
 
 from core import models as core_models
+from graph_engine.projection import TableProjector
 
 UPDATE_ENTITY_CATEGORY = """
     mutation U($input: UpdateEntityCategoryInput!) {
@@ -20,15 +24,15 @@ UPDATE_ENTITY_CATEGORY = """
 """
 
 
-def _info_for(user: User, organization, membership: Membership):
+def _info_for(
+    user: User, organization: Organization, membership: Membership
+) -> SimpleNamespace:
     """A minimal info for the guard itself.
 
     The auth extension resolves the static test token to one fixed identity,
     so multi-identity checks exercise `validate_definition_editable` directly —
     the same level the old `can_perform_action` tests used.
     """
-    from types import SimpleNamespace
-
     request = SimpleNamespace(
         user=user, membership=membership, organization=organization
     )
@@ -38,7 +42,10 @@ def _info_for(user: User, organization, membership: Membership):
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_owner_may_edit_the_definition(
-    api_schema, simple_api_context, test_graph: core_models.Graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """End to end: the request identity owns `test_graph`, so the mutation passes."""
     category_id = str(
@@ -59,7 +66,7 @@ async def test_the_owner_may_edit_the_definition(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_plain_colleague_may_not(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """Same organization, so reads work — but the schema is not theirs to change."""
     user, _ = User.objects.get_or_create(
@@ -77,7 +84,9 @@ def test_a_plain_colleague_may_not(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_an_admin_may(test_graph: core_models.Graph, table_projector) -> None:
+def test_an_admin_may(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     user, _ = User.objects.get_or_create(
         username="org-admin", defaults={"sub": "org-admin", "iss": "static_issuer"}
     )
@@ -93,7 +102,9 @@ def test_an_admin_may(test_graph: core_models.Graph, table_projector) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_curator_may(test_graph: core_models.Graph, table_projector) -> None:
+def test_a_curator_may(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     """Curating the vocabulary is the curator's role, whoever owns the graph."""
     user, _ = User.objects.get_or_create(
         username="org-curator", defaults={"sub": "org-curator", "iss": "static_issuer"}
@@ -111,7 +122,7 @@ def test_a_curator_may(test_graph: core_models.Graph, table_projector) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_the_generic_admin_role_grants_nothing(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """Only kraph's own roles count here: a generic `admin` is no curator."""
     user, _ = User.objects.get_or_create(
@@ -132,7 +143,7 @@ def test_the_generic_admin_role_grants_nothing(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_admin_of_another_organization_may_not(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """The admin role is per organization, not global."""
     from authentikate.models import Organization
@@ -153,7 +164,9 @@ def test_an_admin_of_another_organization_may_not(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_superuser_may(test_graph: core_models.Graph, table_projector) -> None:
+def test_a_superuser_may(
+    test_graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     user, _ = User.objects.get_or_create(
         username="the-superuser",
         defaults={"sub": "root", "iss": "static_issuer", "is_superuser": True},
@@ -168,7 +181,7 @@ def test_a_superuser_may(test_graph: core_models.Graph, table_projector) -> None
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_graph_rules_are_gone_from_the_schema(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     made = await api_schema.execute(
         "mutation G($input: CreateGraphInput!) { createGraph(input: $input) { id } }",
@@ -188,7 +201,7 @@ async def test_graph_rules_are_gone_from_the_schema(
 
 @pytest.fixture
 def outsider_graph(
-    db, backend_stack, test_graph: core_models.Graph
+    db: None, backend_stack: tuple[int, int], test_graph: core_models.Graph
 ) -> core_models.Graph:
     """A graph in a tenant the requesting user is not a member of."""
     from authentikate.models import Membership, Organization, User
@@ -217,7 +230,7 @@ def outsider_category(outsider_graph: core_models.Graph) -> core_models.EntityCa
 
 async def _run(
     api_schema: kante.Schema, ctx: HttpContext, document: str, variables: dict
-):
+) -> ExecutionResult:
     return await api_schema.execute(
         document, variable_values=variables, context_value=ctx
     )
@@ -376,6 +389,7 @@ async def test_a_colleague_may_rename_a_graph_but_not_archive_it(
     assert renamed.errors is None, (
         f"A colleague may curate a shared view: {renamed.errors}"
     )
+    assert renamed.data is not None
     assert renamed.data["updateGraph"]["name"] == "Renamed by a colleague"
 
     archived = await _run(
@@ -463,6 +477,7 @@ async def test_the_guard_still_lets_the_owner_through(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["createEntityCategory"]["key"] == "Mine"
     assert await core_models.EntityCategory.objects.filter(
         graph=test_graph, key="Mine"

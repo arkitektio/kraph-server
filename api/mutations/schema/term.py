@@ -24,6 +24,7 @@ stop showing it and `terms` lists it only when asked — and can be shown again.
 """
 
 from arkitekt_datalayer import models as datalayer_models
+from authentikate.models import Organization
 from kante.types import Info
 
 from api import context, inputs, types
@@ -41,7 +42,9 @@ def _resolve(info: Info, term_id: str) -> evidence_models.Term:
     return term
 
 
-def _media_store(image: str | None, organization) -> datalayer_models.MediaStore | None:  # noqa: ANN001 - authentikate Organization
+def _media_store(
+    image: str | None, organization: Organization
+) -> datalayer_models.MediaStore | None:
     """The organization's media store ``image`` names; another organization's store id is not found."""
     if not image:
         return None

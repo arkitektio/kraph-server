@@ -13,13 +13,16 @@ A test that mixes the two writes evidence the API caller cannot see. Pick one.
 
 import os
 import time
+from collections.abc import Callable, Iterator
 from datetime import UTC, datetime
 
 import boto3
 import psycopg
 import pytest
 from authentikate.models import Client, Membership, Organization, User
+from botocore.client import BaseClient
 from dokker import PortNotFoundError, testing
+from kante import Schema
 from kante.context import HttpContext, UniversalRequest
 from moto import mock_aws
 from strawberry.http.temporal_response import TemporalResponse
@@ -32,11 +35,11 @@ from graph_engine.controller import GraphController
 from graph_engine.materialize import materialize
 from graph_engine.projection import TableProjector
 from tests.support import rules
-from tests.support.identity import static_identity
+from tests.support.identity import owned_by, static_identity
 
 
 @pytest.fixture(scope="function")
-def aws_credentials(monkeypatch) -> None:
+def aws_credentials(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mocked AWS credentials for moto, restored after the test."""
     for key, value in (
         ("AWS_ACCESS_KEY_ID", "testing"),
@@ -49,23 +52,23 @@ def aws_credentials(monkeypatch) -> None:
 
 
 @pytest.fixture(scope="function")
-def s3(aws_credentials):
+def s3(aws_credentials: None) -> Iterator[BaseClient]:
     with mock_aws():
         yield boto3.client("s3", region_name="us-east-1")
 
 
 @pytest.fixture
-def create_bucket1(s3) -> None:
+def create_bucket1(s3: BaseClient) -> None:
     s3.create_bucket(Bucket="babanana")
 
 
 @pytest.fixture
-def create_bucket2(s3) -> None:
+def create_bucket2(s3: BaseClient) -> None:
     s3.create_bucket(Bucket="cabanana")
 
 
 @pytest.fixture(scope="session")
-def backend_stack():
+def backend_stack() -> Iterator[tuple[int, int]]:
     """Bring up the integration stack and yield the host ports it landed on: `(db, redis)`.
 
     The ports are *not* fixed. The compose file publishes them with no host port, so
@@ -108,7 +111,7 @@ def backend_stack():
 
 
 @pytest.fixture(scope="session")
-def django_db_modify_db_settings(backend_stack):
+def django_db_modify_db_settings(backend_stack: tuple[int, int]) -> Iterator[None]:
     """Start the backend services, and point Django at the ports they came up on.
 
     pytest-django calls this before creating the test database, which is the only
@@ -124,7 +127,7 @@ def django_db_modify_db_settings(backend_stack):
 
 
 @pytest.fixture(scope="function")
-def api_context(db, backend_stack) -> HttpContext:
+def api_context(db: None, backend_stack: tuple[int, int]) -> HttpContext:
     """The request context every GraphQL test executes under: the static token's identity."""
     user, org, membership = static_identity()
     client, _ = Client.objects.get_or_create(client_id="oinsoins")
@@ -146,13 +149,13 @@ def api_context(db, backend_stack) -> HttpContext:
 
 
 @pytest.fixture(scope="function")
-def authenticated_context(api_context) -> HttpContext:
+def authenticated_context(api_context: HttpContext) -> HttpContext:
     """`api_context` under its old name. One release, then gone."""
     return api_context
 
 
 @pytest.fixture(scope="function")
-def simple_api_context(api_context) -> HttpContext:
+def simple_api_context(api_context: HttpContext) -> HttpContext:
     """`api_context` under its old name. One release, then gone."""
     return api_context
 
@@ -315,7 +318,10 @@ def bio_graph_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def test_graph(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     """
     Create a test graph with the bio_graph schema.
@@ -328,15 +334,17 @@ def test_graph(
     return materialize(
         bio_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="test_graph",
     )
 
 
 @pytest.fixture(scope="function")
-def graph_controller(transactional_db, table_projector, test_graph) -> GraphController:
+def graph_controller(
+    transactional_db: None,
+    table_projector: TableProjector,
+    test_graph: core_models.Graph,
+) -> GraphController:
     """A ready-to-use GraphController drawing through the table projector."""
     return GraphController(
         projector=table_projector,
@@ -347,7 +355,10 @@ def graph_controller(transactional_db, table_projector, test_graph) -> GraphCont
 
 @pytest.fixture(scope="function")
 def bio_graph(
-    transactional_db, table_projector, bio_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    bio_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     """
     Create a biological graph with the provided schema.
@@ -358,9 +369,7 @@ def bio_graph(
     return materialize(
         bio_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="bio_graph",
     )
 
@@ -411,7 +420,9 @@ def minimal_schema() -> models.GraphDefinitionInput:
 
 
 @pytest.fixture(scope="function")
-def table_projector(transactional_db, backend_stack) -> TableProjector:
+def table_projector(
+    transactional_db: None, backend_stack: tuple[int, int]
+) -> TableProjector:
     """The projection kind the suite draws through.
 
     Stateless: the drawing lives in the projection tables of the same test
@@ -424,7 +435,7 @@ def table_projector(transactional_db, backend_stack) -> TableProjector:
 
 
 @pytest.fixture(scope="function")
-def api_schema(table_projector):
+def api_schema(table_projector: TableProjector) -> Schema:
     """The served schema — the one `api/schema.py` builds, drawing through the table projector.
 
     Not rebuilt per test: `create_schema` binds only a `ProjectionExtension` over
@@ -459,15 +470,16 @@ def minimal_graph_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def minimal_graph(
-    transactional_db, table_projector, minimal_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    minimal_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         minimal_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="minimal",
     )
 
@@ -506,15 +518,16 @@ def interactome_graph_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def interactome_graph(
-    transactional_db, table_projector, interactome_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    interactome_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         interactome_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="interactome",
     )
 
@@ -538,15 +551,16 @@ def lab_graph_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def lab_graph(
-    transactional_db, table_projector, lab_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    lab_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     graph = materialize(
         lab_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="lab",
     )
     core_models.ProtocolEventCategory.objects.create(
@@ -642,37 +656,41 @@ def oncology_graph_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def cytology_graph(
-    transactional_db, table_projector, cytology_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    cytology_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         cytology_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="cytology",
     )
 
 
 @pytest.fixture(scope="function")
 def oncology_graph(
-    transactional_db, table_projector, oncology_graph_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    oncology_graph_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         oncology_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="oncology",
     )
 
 
 @pytest.fixture(scope="function")
 def census_graph(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     """A view that declares no word of its own — its one category **derives**
     from the word `Cell` (a rule whose WORD condition names it, RFC 0010),
@@ -695,16 +713,16 @@ def census_graph(
             ),
         ),
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="census",
     )
 
 
 @pytest.fixture(scope="function")
 def literal_graph(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     """Declares `Cell` and `StemCell` primitively — membership is whatever was
     asserted, under each word's own label. The contrast for `subsumption_graph`."""
@@ -722,16 +740,16 @@ def literal_graph(
             ),
         ),
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="literal",
     )
 
 
 @pytest.fixture(scope="function")
 def subsumption_graph(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     """One category, a union of clauses: "'Cell' means what Peter called Cell,
     and what Karl called StemCell after Dec 5" (RFC 0007). Declares no word of
@@ -762,9 +780,7 @@ def subsumption_graph(
             ),
         ),
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="subsumption",
     )
 
@@ -777,14 +793,14 @@ def subsumption_graph(
 
 
 @pytest.fixture
-def organization(db: None, backend_stack: None) -> Organization:
+def organization(db: None, backend_stack: tuple[int, int]) -> Organization:
     """The tenant most evidence-level tests write under (identifier `static_issuer#evidence-org`)."""
     org, _ = Organization.objects.get_or_create(identifier="static_issuer#evidence-org")
     return org
 
 
 @pytest.fixture
-def other_organization(db: None, backend_stack: None) -> Organization:
+def other_organization(db: None, backend_stack: tuple[int, int]) -> Organization:
     """An organization the static test token is **not** a member of. Nothing it owns may be visible to any other tenant."""
     org, _ = Organization.objects.get_or_create(
         identifier="static_issuer#a_tenant_you_are_not_in"
@@ -793,7 +809,7 @@ def other_organization(db: None, backend_stack: None) -> Organization:
 
 
 @pytest.fixture
-def user(db: None, backend_stack: None) -> User:
+def user(db: None, backend_stack: tuple[int, int]) -> User:
     """A user to own the graphs categories still hang off."""
     user, _ = User.objects.get_or_create(username="evidence-user", sub="evidence-sub")
     return user
@@ -849,7 +865,9 @@ def entity_category_b(graph_b: core_models.Graph) -> core_models.EntityCategory:
 
 
 @pytest.fixture
-def make_node(organization: Organization, assertion: evidence_models.Assertion):
+def make_node(
+    organization: Organization, assertion: evidence_models.Assertion
+) -> Callable[[core_models.Category], str]:
     """Mint a real instance under a category's word and hand back its ref."""
 
     def _make(category: core_models.Category) -> str:
@@ -915,15 +933,16 @@ def assertion(organization: Organization) -> evidence_models.Assertion:
 
 @pytest.fixture
 def second_graph(
-    test_graph: core_models.Graph, bio_graph_schema, table_projector, api_context
+    test_graph: core_models.Graph,
+    bio_graph_schema: models.GraphDefinitionInput,
+    table_projector: TableProjector,
+    api_context: HttpContext,
 ) -> core_models.Graph:
     """A second full view over the same organization's evidence, from the same schema as `test_graph`."""
     request = api_context.request
     return materialize(
         bio_graph_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="second_graph",
     )

@@ -4,9 +4,12 @@ from kante.types import Info
 from api import inputs, types
 from api.mutations._scoped import scoped
 from core import models
+from graph_engine.input_models import ScatterPlotMutationInput
 
 
-def _resolve_plot_query(info: Info, model) -> models.GraphTableQuery:
+def _resolve_plot_query(
+    info: Info, model: ScatterPlotMutationInput
+) -> models.GraphTableQuery:
     """The saved table query this plot is drawn from, checked against the caller.
 
     A plot has no graph of its own — it reaches one through its query, which is
@@ -19,7 +22,7 @@ def _resolve_plot_query(info: Info, model) -> models.GraphTableQuery:
     )
 
 
-def _own_plot(info: Info, pk) -> models.ScatterPlot:
+def _own_plot(info: Info, pk: int) -> models.ScatterPlot:
     """A plot the caller may change, which is a stricter test than tenancy.
 
     `ScatterPlot.creator` was already on the model and read by nothing —

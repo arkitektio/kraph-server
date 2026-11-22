@@ -6,14 +6,15 @@ to root lists, nested prefetches and pk lookups alike.
 """
 
 import builtins
+from collections.abc import Callable
 from datetime import datetime
 from enum import Enum
-from typing import cast
+from typing import Any, TypeVar, cast
 
 import kante
 import strawberry
 import strawberry_django
-from django.db.models import Count, Q
+from django.db.models import Count, Model, Q, QuerySet
 from django.utils import timezone
 from strawberry import auto
 
@@ -22,16 +23,26 @@ from projects.types import Project
 from todos import models
 from todos.inputs import TodoStatus
 
+#: A GraphQL type class, handed through `_fenced` unchanged.
+TypeClass = TypeVar("TypeClass", bound=type)
+RowT = TypeVar("RowT")
+ItemT = TypeVar("ItemT", bound=Model)
+
 
 def _sub(info: kante.Info) -> str:
     return str(info.context.request.user.sub)
 
 
-def _fenced(path: str):
+def _fenced(path: str) -> Callable[[TypeClass], TypeClass]:
     """Scope a type's rows to the active organization, reached through ``path``."""
 
-    def decorate(cls):
-        def get_queryset(cls_, queryset, info, **kwargs):
+    def decorate(cls: TypeClass) -> TypeClass:
+        def get_queryset(
+            cls_: type,
+            queryset: QuerySet[Model],
+            info: kante.Info,
+            **kwargs: Any,
+        ) -> QuerySet[Model]:
             return queryset.filter(**{path: get_active_organization(info)})
 
         cls.get_queryset = classmethod(get_queryset)
@@ -351,7 +362,12 @@ class TodoSummary:
     )
 
 
-def _progress(row: object, done: str, total: str, related) -> TodoProgress:
+def _progress(
+    row: RowT,
+    done: str,
+    total: str,
+    related: Callable[[RowT], QuerySet[ItemT]],
+) -> TodoProgress:
     """Read the counts the optimizer annotated; a row that did not come through it (a mutation's
     answer) counts them itself."""
     if hasattr(row, done) and hasattr(row, total):

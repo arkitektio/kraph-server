@@ -10,8 +10,10 @@ dropped by hand, or after upgrading past a change in the generated shape
 so that is a run of this command, not a data migration).
 """
 
+from typing import Any
+
 from authentikate.models import Organization
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from core import models
 from core.management.commands import _graphs
@@ -25,7 +27,7 @@ class Command(BaseCommand):
         "Rebuild graphs' per-graph schemas and property graphs from their categories."
     )
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument(
             "--graph",
@@ -36,7 +38,7 @@ class Command(BaseCommand):
         )
         parser.add_argument("--all", action="store_true", help="Every graph.")
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Refresh the selected graphs' namespaces."""
         chosen = [
             bool(options["graph"]),

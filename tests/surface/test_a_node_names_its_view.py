@@ -15,7 +15,10 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
+from graph_engine import input_models as models
+from graph_engine.projection import TableProjector
 from tests.support import drawing, writes
+from tests.support.identity import owned_by
 
 NODE_BY_ID = """
     query GetNode($id: ID!, $graph: ID!) {
@@ -51,6 +54,7 @@ async def test_a_drawn_event_is_typed_as_an_event(
     )
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     assert read.data["node"]["__typename"] == "NaturalEvent", (
         "The kind comes from the claim; the label is the view's rename of a word"
     )
@@ -63,7 +67,7 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The list is the rule's answer, so a projection that is behind does not hide a claim.
 
@@ -80,6 +84,7 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
         context_value=simple_api_context,
     )
     assert listed_before.errors is None, f"GraphQL errors: {listed_before.errors}"
+    assert listed_before.data is not None
     assert entity_id in {entity["id"] for entity in listed_before.data["entities"]}
 
     @sync_to_async
@@ -95,6 +100,7 @@ async def test_a_claim_the_projection_has_not_drawn_is_still_listed(
         context_value=simple_api_context,
     )
     assert listed_after.errors is None, f"GraphQL errors: {listed_after.errors}"
+    assert listed_after.data is not None
     assert entity_id in {entity["id"] for entity in listed_after.data["entities"]}, (
         "The claim is what the category admits; the vertex is only how this view draws it"
     )
@@ -160,6 +166,7 @@ async def test_nodes_in_a_graph_are_not_only_entities(
     )
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     by_id = {node["id"]: node["__typename"] for node in listed.data["nodes"]}
     assert by_id.get(entity_id) == "Entity"
     assert by_id.get(event_id) == "NaturalEvent", (
@@ -244,6 +251,7 @@ async def test_search_narrows_by_the_claims_own_word(
     )
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     found = {node["id"] for node in listed.data["nodes"]}
     assert cell_id in found, "The claim whose word matches is in the list"
     assert ais_id not in found, "A claim of a different word is not"
@@ -255,7 +263,7 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The search is over the log, so a projection that is behind does not hide a match.
 
@@ -281,6 +289,7 @@ async def test_search_finds_a_claim_the_projection_has_not_drawn(
     )
 
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     assert cell_id in {node["id"] for node in listed.data["nodes"]}, (
         "The word is the claim's, not the drawing's"
     )
@@ -304,9 +313,9 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    minimal_schema,
-    table_projector,
-    authenticated_context,
+    minimal_schema: models.GraphDefinitionInput,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """Declared-in-A, not-in-B: A answers the drawing, B refuses, the claim answers either way.
 
@@ -324,9 +333,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
         return materialize(
             minimal_schema,
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="person_graph",
         )
 
@@ -338,6 +345,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
         context_value=simple_api_context,
     )
     assert held.errors is None, f"GraphQL errors: {held.errors}"
+    assert held.data is not None
     assert held.data["node"]["__typename"] == "Entity"
     assert held.data["node"]["drawnIn"], (
         "The write drew it, so this view answers with the drawing"
@@ -359,6 +367,7 @@ async def test_a_view_that_does_not_admit_the_node_refuses_it(
         INSTANCE, variable_values={"id": entity_id}, context_value=simple_api_context
     )
     assert claim.errors is None, f"GraphQL errors: {claim.errors}"
+    assert claim.data is not None
     assert claim.data["instance"]["term"]["key"] == "AIS", (
         "The claim is view-independent and stays readable"
     )
@@ -450,6 +459,7 @@ async def test_stats_answer_and_stay_inside_the_organization(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["structureKindStats"]["count"] == own_kinds, (
         "The evidence-kind stats answer, scoped to the caller's organization"
     )
@@ -468,13 +478,15 @@ ENTITIES_BY_CATEGORY = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_plural_lists_dispatch_on_the_claims_kind(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Even if a rule admitted a node of another kind, the list would type it by its claim."""
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
     @sync_to_async
-    def ais_category():
+    def ais_category() -> int:
         return core_models.EntityCategory.objects.get(graph=test_graph, key="AIS").pk
 
     listed = await api_schema.execute(
@@ -483,6 +495,7 @@ async def test_plural_lists_dispatch_on_the_claims_kind(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     assert {node["id"]: node["__typename"] for node in listed.data["entities"]}[
         entity_id
     ] == "Entity"

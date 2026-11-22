@@ -13,9 +13,12 @@ import warnings
 from io import StringIO
 
 from django.core.management import call_command
+from pytest_django import DjangoDbBlocker
 
 
-def test_makemigrations_has_nothing_to_write(django_db_blocker) -> None:
+def test_makemigrations_has_nothing_to_write(
+    django_db_blocker: DjangoDbBlocker,
+) -> None:
     out = StringIO()
     # Unblocked so Django may *try* the consistency check; with no stack up it
     # warns and carries on, which is the whole reason this needs no database.

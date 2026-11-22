@@ -246,17 +246,17 @@ def materialize(
 
 @__import__("django").db.transaction.atomic
 def _materialize_atomically(
-    definition,
-    projector,
-    user,
-    organization,
-    membership,
-    name,
-    description,
-    backfill,
-    schema_hash,
-    sameness_rule,
-):
+    definition: GraphDefinitionInput,
+    projector: Projector | None,
+    user: User | None,
+    organization: Organization | None,
+    membership: Membership | None,
+    name: str,
+    description: str | None,
+    backfill: bool,
+    schema_hash: str,
+    sameness_rule: dict,
+) -> models.Graph:
     """One transaction for the whole bring-up.
 
     A `NamespaceSpecError` from `refresh_namespace` used to leave a committed
@@ -348,7 +348,9 @@ def _materialize_atomically(
     return graph
 
 
-def _materialize_categories(graph, definition: GraphDefinitionInput, user) -> None:
+def _materialize_categories(
+    graph: models.Graph, definition: GraphDefinitionInput, user: User | None
+) -> None:
     """Create every category the definition declares, plus the initial schema.
 
     Each category declares one of the organization's terms, minted here if this is

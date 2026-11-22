@@ -17,7 +17,9 @@ from evidence import models as evidence_models
 from graph_engine import input_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, reads, writes
+from tests.support.identity import owned_by
 
 
 async def _prepare_record_metric_categories(
@@ -57,7 +59,7 @@ async def test_record_metric_creates_the_structure_it_needs(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     """An unknown identifier is created, not rejected.
 
     This replaces a pair of tests that exercised the per-graph
@@ -90,6 +92,7 @@ async def test_record_metric_creates_the_structure_it_needs(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["assertMetricValue"]["metric"]["value"] == 12.34
 
     created = await evidence_models.StructureKind.all_objects.filter(
@@ -104,7 +107,7 @@ async def test_create_metric(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     mutation = """
         mutation CreateMetric($input: AssertMetricValueInput!) {
             assertMetricValue(input: $input) { metric { id } }
@@ -136,7 +139,7 @@ async def test_supersede_metric_value_cites_the_value_it_replaces(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueInput!) {
             assertMetricValue(input: $input) { metric { id } }
@@ -238,15 +241,16 @@ def edge_schema() -> models.GraphDefinitionInput:
 
 @pytest.fixture(scope="function")
 def edge_graph(
-    transactional_db, table_projector, edge_schema, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    edge_schema: models.GraphDefinitionInput,
+    authenticated_context: HttpContext,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         edge_schema,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="edge_graph",
     )
 
@@ -282,6 +286,7 @@ async def test_measurement_rolls_its_metrics_up(
         context_value=simple_api_context,
     )
     assert before.errors is None, f"GraphQL errors: {before.errors}"
+    assert before.data is not None
     assert before.data["node"]["properties"].get("avg_length") is None, (
         "Nothing may derive before the measurement is asserted"
     )
@@ -294,6 +299,7 @@ async def test_measurement_rolls_its_metrics_up(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     measurement = created.data["assertMeasurementExists"]["link"]
 
     # A measurement runs structure → entity, and both ends resolve. `source` and
@@ -307,6 +313,7 @@ async def test_measurement_rolls_its_metrics_up(
         context_value=simple_api_context,
     )
     assert after.errors is None, f"GraphQL errors: {after.errors}"
+    assert after.data is not None
     assert after.data["node"]["properties"].get("avg_length") == pytest.approx(42.0), (
         "Asserting a measurement must move the derived value"
     )
@@ -369,6 +376,7 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     relation_id = created.data["assertRelationExists"]["link"]["id"]
 
     @sync_to_async
@@ -400,6 +408,7 @@ async def test_evidence_can_inform_a_claim_rather_than_a_node(
     )
 
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     informs = read.data["link"]
     assert informs["kind"] == "INFORMS"
     assert informs["source"]["identifier"] == "@mikro/roi", (
@@ -436,6 +445,7 @@ async def _create_structure_row(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertStructureExists"]["structure"]["id"]
 
 
@@ -462,6 +472,7 @@ async def test_metrics_for_structure_reads_back_through_sql(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     metrics = result.data["metricsForStructure"]
     assert [m["value"] for m in metrics] == [45.2]
 
@@ -498,6 +509,7 @@ async def test_link_structure_to_entity_records_the_claim(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
     linked = await api_schema.execute(
@@ -526,6 +538,7 @@ async def test_link_structure_to_entity_records_the_claim(
     # returning `structure` named the one thing the write did not produce and left
     # the claim it did produce unaddressable — which is what `description(id:)`
     # reads back.
+    assert linked.data is not None
     claim = linked.data["assertInforms"]["link"]
     assert claim["kind"] == "INFORMS", f"Expected an INFORMS claim, got {claim['kind']}"
     assert claim["targetRef"] == entity_id, (
@@ -547,13 +560,16 @@ async def test_link_structure_to_entity_records_the_claim(
     )
 
     assert informing.errors is None, f"GraphQL errors: {informing.errors}"
+    assert informing.data is not None
     assert [s["object"] for s in informing.data["informingStructures"]] == [object_id]
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_the_informs_claim_stops_the_datum_feeding_the_value(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """RFC 0023: that a datum informs an individual is a claim, and the fold
     honours its standing. Retract the INFORMS link and the datum's measurements

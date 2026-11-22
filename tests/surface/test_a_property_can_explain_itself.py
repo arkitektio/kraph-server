@@ -92,6 +92,7 @@ async def _entity_with_measurements(
         )
         assert recorded.errors is None, f"GraphQL errors: {recorded.errors}"
 
+    assert created.data is not None
     return created.data["assertEntityExists"]["instance"]["id"]
 
 
@@ -114,6 +115,7 @@ async def test_a_derived_value_can_explain_itself(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     properties = {p["key"]: p for p in result.data["node"]["richProperties"]}
     assert "avg_length" in properties, "The MEAN must appear among the rich properties"
 
@@ -143,6 +145,7 @@ async def test_supporting_evidence_is_no_longer_an_empty_list(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     avg = next(
         p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length"
     )
@@ -172,6 +175,7 @@ async def test_the_value_names_who_asserted_it(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     avg = next(
         p for p in result.data["node"]["richProperties"] if p["key"] == "avg_length"
     )
@@ -205,6 +209,7 @@ async def test_validity_is_the_observation_window(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     node = result.data["node"]
     assert node["validFrom"] is not None, (
         "An entity with evidence has an observation window"
@@ -230,6 +235,7 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
 
+    assert created.data is not None
     result = await api_schema.execute(
         THE_SENTENCE,
         variable_values={
@@ -240,6 +246,7 @@ async def test_a_property_with_no_evidence_reports_nothing_rather_than_zero(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     for prop in result.data["node"]["richProperties"]:
         assert prop["nEvidence"] in (None, 0)
         assert prop["supportingEvidence"] == []

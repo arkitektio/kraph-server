@@ -44,6 +44,7 @@ async def _entity(api_schema: kante.Schema, ctx: HttpContext, term: str) -> str:
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertEntityExists"]["instance"]["id"]
 
 
@@ -58,6 +59,7 @@ async def _relation(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertRelationExists"]["link"]["id"]
 
 
@@ -94,6 +96,7 @@ async def test_a_listed_id_can_be_fetched_back(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     rows = listed.data["relations"]
 
     assert [row["id"] for row in rows] == [written], (
@@ -110,6 +113,7 @@ async def test_a_listed_id_can_be_fetched_back(
         context_value=simple_api_context,
     )
     assert fetched.errors is None, f"GraphQL errors: {fetched.errors}"
+    assert fetched.data is not None
     assert fetched.data["relation"]["id"] == written
 
 
@@ -139,6 +143,7 @@ async def test_the_ids_filter_matches_the_ids_the_api_issued(
     )
     assert narrowed.errors is None, f"GraphQL errors: {narrowed.errors}"
 
+    assert narrowed.data is not None
     assert [row["id"] for row in narrowed.data["relations"]] == [second]
 
     absent = await api_schema.execute(
@@ -147,6 +152,7 @@ async def test_the_ids_filter_matches_the_ids_the_api_issued(
         context_value=simple_api_context,
     )
     assert absent.errors is None, f"GraphQL errors: {absent.errors}"
+    assert absent.data is not None
     assert absent.data["relations"] == [], (
         "An id naming nothing is an empty result, not an error"
     )
@@ -178,6 +184,7 @@ async def test_a_listed_edge_carries_its_endpoints_and_provenance(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     row = listed.data["relations"][0]
 
     assert row["source"]["id"] == source
@@ -248,6 +255,7 @@ async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["relation"]["id"] == relation_id, (
         "The claim reads back as itself"
     )
@@ -256,7 +264,9 @@ async def test_an_edge_can_be_read_back_by_the_id_it_was_given(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_no_view_draws_is_labelled_by_its_kind(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """C4: a relation under a word no view declares is a claim with no drawing.
     Read back as an edge it carries the claim's kind as its label, because there

@@ -28,9 +28,11 @@ Two modes:
 import datetime
 import signal
 import threading
+from types import FrameType
+from typing import Any
 
 from authentikate.models import Organization
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from api.extensions.projection import current_or_default
 from core import models
@@ -44,7 +46,7 @@ class Command(BaseCommand):
 
     help = "Rebuild a graph's projection from the evidence base, or apply what the outbox owes (--incremental, --loop)."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument(
             "--graph", help="Id or name of the graph to rebuild. Omit with --all."
@@ -86,7 +88,7 @@ class Command(BaseCommand):
             help="Leave outbox rows younger than this many seconds for the next pass (default 0; 30 in --loop mode) — the request that wrote them may still be drawing.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Rebuild the selected graphs, or replay what is owed."""
         if options["incremental"]:
             return self._incremental(options)
@@ -126,7 +128,7 @@ class Command(BaseCommand):
                 )
             )
 
-    def _incremental(self, options) -> None:
+    def _incremental(self, options: dict[str, Any]) -> None:
         """Apply the outbox to every consistent graph of each selected organization."""
         if options["graph"]:
             raise CommandError(
@@ -226,7 +228,7 @@ class Command(BaseCommand):
                 )
             )
 
-    def _loop(self, controller, options) -> None:
+    def _loop(self, controller: GraphController, options: dict[str, Any]) -> None:
         """The runner: `run_forever` until SIGTERM/SIGINT, then exit 0 after the current pass."""
         from graph_engine import runner
 
@@ -245,7 +247,7 @@ class Command(BaseCommand):
 
         stop = threading.Event()
 
-        def on_signal(signum, frame) -> None:
+        def on_signal(signum: int, frame: FrameType | None) -> None:
             self.stdout.write(
                 f"received {signal.Signals(signum).name}; stopping after the current pass"
             )
@@ -270,7 +272,7 @@ class Command(BaseCommand):
         stale = ", schema stale" if position.schema_stale else ""
         return f" — {position.status}, cursor {position.cursor}/{position.max_seq}, lag {position.lag}{stale}"
 
-    def _select_graphs(self, options) -> list[models.Graph]:
+    def _select_graphs(self, options: dict[str, Any]) -> list[models.Graph]:
         if options["all"]:
             return list(models.Graph.objects.all())
         return [_graphs.select_graph(str(options["graph"]))]

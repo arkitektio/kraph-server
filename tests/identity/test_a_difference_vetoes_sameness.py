@@ -12,12 +12,15 @@ that made it, which is a position on somebody else's claim, not a claim of
 one's own.
 """
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import identity
 from evidence import models as evidence_models
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, writes
 from tests.support.graphs import BEFORE
 from tests.support.graphs import example_graph as _example_graph
@@ -48,7 +51,7 @@ LINK = """
 """
 
 
-async def _same(api_schema, ctx, refs: list[str]) -> str:
+async def _same(api_schema: kante.Schema, ctx: HttpContext, refs: list[str]) -> str:
     return (
         await writes.execute(
             api_schema, ctx, ASSERT_SAME, {"input": {"instances": refs}}
@@ -56,7 +59,9 @@ async def _same(api_schema, ctx, refs: list[str]) -> str:
     )["assertSameInstance"]["links"][0]["id"]
 
 
-async def _different(api_schema, ctx, refs: list[str]) -> dict:
+async def _different(
+    api_schema: kante.Schema, ctx: HttpContext, refs: list[str]
+) -> dict:
     return (
         await writes.execute(
             api_schema, ctx, ASSERT_DIFFERENT, {"input": {"instances": refs}}
@@ -64,14 +69,18 @@ async def _different(api_schema, ctx, refs: list[str]) -> dict:
     )["assertDifferentInstance"]
 
 
-async def _node(api_schema, ctx, graph: core_models.Graph, ref: str) -> dict:
+async def _node(
+    api_schema: kante.Schema, ctx: HttpContext, graph: core_models.Graph, ref: str
+) -> dict:
     return (
         await writes.execute(api_schema, ctx, NODE, {"id": ref, "graph": str(graph.pk)})
     )["node"]
 
 
 @sync_to_async
-def _drawn(graph: core_models.Graph, *refs: str):
+def _drawn(
+    graph: core_models.Graph, *refs: str
+) -> tuple[int, list[tuple[str | None, list[str]]]]:
     """Vertex count, then each ref's representative and members — the view's fold."""
     return drawing.vertex_count(graph, "AIS"), [
         (drawing.representative_of(graph, ref), drawing.members_of(graph, ref))
@@ -93,7 +102,9 @@ def _cached(graph: core_models.Graph, *refs: str) -> dict[str, list[str]]:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_vetoes_the_direct_sameness(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Two merged observations come apart when somebody says they are two — in
     the view's drawing and in the organization's cache — and the claim that
@@ -150,7 +161,9 @@ async def test_a_difference_vetoes_the_direct_sameness(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_asserted_first_prevents_the_merge(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Order does not matter: the sameness claim written after the difference is
     recorded but does not union."""
@@ -183,7 +196,9 @@ async def test_a_difference_asserted_first_prevents_the_merge(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_conflict_through_a_third_instance_stays_merged_and_is_reported(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """a~b, b~c, a≠c: no direct sameness is vetoed, so the fold keeps one
     individual of three, and `conflicts` names the difference that disagrees."""
@@ -228,7 +243,9 @@ async def test_a_conflict_through_a_third_instance_stays_merged_and_is_reported(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_the_difference_restores_the_union(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"][
         "id"
@@ -260,7 +277,9 @@ async def test_retracting_the_difference_restores_the_union(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_the_category_does_not_trust_is_ignored(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Sameness is the view's rule (RFC 0024), and so is its negation: this view
     trusts Peter, so a stranger's `DIFFERENT_FROM` changes nothing in it —
@@ -268,7 +287,9 @@ async def test_a_difference_the_category_does_not_trust_is_ignored(
     graph_id = await _example_graph(api_schema, simple_api_context, "difference-trust")
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[
+        tuple[int, list[str]], tuple[int, list[str]], tuple[int, list[str]], str, str
+    ]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         # Sameness is the view's rule (RFC 0024): this view counts Peter's merges.
         graph.sameness_rule = {
@@ -302,7 +323,9 @@ async def test_a_difference_the_category_does_not_trust_is_ignored(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_difference_needs_two_distinct_instances(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     a = (await writes.assert_entity(api_schema, simple_api_context, "AIS"))["instance"][
         "id"
@@ -318,7 +341,9 @@ async def test_a_difference_needs_two_distinct_instances(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_rebuild_identity_check_agrees_under_the_veto(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """`manage.py rebuild_identity --check` recomputes the cache from the claims
     and must reach the same answer the write path did, veto included."""

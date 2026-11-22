@@ -10,7 +10,10 @@ from django.db import models
 from graph_engine import input_models
 
 if TYPE_CHECKING:
+    from authentikate.models import User
+
     from core import models as core_models
+    from evidence.models import Term
 
 
 T = TypeVar("T", bound="core_models.Category")
@@ -70,7 +73,7 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
         """Convert a category key to an AGE-compatible name by converting to lowercase and replacing spaces with underscores."""
         return key.lower().replace(" ", "_")
 
-    def _term_for(self, graph: core_models.Graph, key: str):
+    def _term_for(self, graph: core_models.Graph, key: str) -> Term:
         """The organization's word this category declares, minted if it is new.
 
         The join the evidence log names. Every path that creates a category comes
@@ -114,7 +117,7 @@ class CategoryManager(KindedManager["core_models.Category"], Generic[T]):
         return store_id
 
     def _apply_pin(
-        self, category: core_models.Category, user, pin: bool | None
+        self, category: core_models.Category, user: User, pin: bool | None
     ) -> None:
         """Add or remove this user's pin. `None` means the caller said nothing about it.
 

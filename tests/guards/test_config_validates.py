@@ -3,23 +3,25 @@
 Standalone — needs no database; run with ``uv run pytest tests/guards/test_config_validates.py``.
 """
 
+import pytest
+
 from kraph_server.configuration import Settings
 
 
-def test_config_yaml_validates():
+def test_config_yaml_validates() -> None:
     """The service's own config.yaml parses into the typed schema."""
     s = Settings()
     assert s.postgres.db_name
     assert s.redis.host
 
 
-def test_env_override(monkeypatch):
+def test_env_override(monkeypatch: pytest.MonkeyPatch) -> None:
     """Env vars override the YAML file (nested via ``__``)."""
     monkeypatch.setenv("POSTGRES__PASSWORD", "from-env-test")
     assert Settings().postgres.password == "from-env-test"
 
 
-def test_django_settings_read_the_config():
+def test_django_settings_read_the_config() -> None:
     """`DEBUG`, `ALLOWED_HOSTS` and the proxy trust come from the config, not from literals.
 
     History: `DEBUG = True` and `ALLOWED_HOSTS = ["*"]` were hardcoded while

@@ -8,13 +8,17 @@ from the log, which is the honesty test every projection property comes down to.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import kante
 from asgiref.sync import sync_to_async
+from authentikate.models import Organization
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import identity as identity_module
 from evidence import models as evidence_models
 from evidence import writer
 from graph_engine.controller import GraphController
+from graph_engine.projection.protocol import Projector
 from graph_engine.reports import DrawCounts
 from tests.support import rules
 from tests.support.writes import CREATE_GRAPH, execute
@@ -167,8 +171,8 @@ EXAMPLE_DEFINITION: dict[str, Any] = {
 
 
 async def graph_with(
-    api_schema: Any,
-    ctx: Any,
+    api_schema: kante.Schema,
+    ctx: HttpContext,
     name: str,
     definition: dict[str, Any],
     *,
@@ -183,14 +187,14 @@ async def graph_with(
     ]["id"]
 
 
-async def example_graph(api_schema: Any, ctx: Any, name: str) -> str:
+async def example_graph(api_schema: kante.Schema, ctx: HttpContext, name: str) -> str:
     """The RFC 0009 example view, by name."""
     return await graph_with(api_schema, ctx, name, EXAMPLE_DEFINITION)
 
 
 async def graph_declaring(
-    api_schema: Any,
-    ctx: Any,
+    api_schema: kante.Schema,
+    ctx: HttpContext,
     word: str,
     *,
     name: str | None = None,
@@ -208,7 +212,9 @@ async def graph_declaring(
     )
 
 
-def rebuild(graph: Any, table_projector: Any) -> DrawCounts:
+def rebuild(
+    graph: core_models.Graph | int | str, table_projector: Projector
+) -> DrawCounts:
     """Drop this view's drawing and derive it again from the log.
 
     Takes a `Graph` or its id and returns what the replay drew, as the
@@ -219,11 +225,13 @@ def rebuild(graph: Any, table_projector: Any) -> DrawCounts:
     return GraphController(projector=table_projector).rebuild_projection(graph)
 
 
-async def arebuild(graph: Any, table_projector: Any) -> DrawCounts:
+async def arebuild(
+    graph: core_models.Graph | int | str, table_projector: Projector
+) -> DrawCounts:
     return await sync_to_async(rebuild)(graph, table_projector)
 
 
-def merge_as(organization: Any, left: str, right: str, subject: str) -> None:
+def merge_as(organization: Organization, left: str, right: str, subject: str) -> None:
     """A sameness claim by a named annotator, folded into the organization-grain
     cache exactly as the controller folds it."""
     assertion = writer.create_assertion(organization, subject=subject, app_id="pytest")
@@ -238,11 +246,11 @@ def merge_as(organization: Any, left: str, right: str, subject: str) -> None:
 
 
 def define_entity(
-    graph: Any,
+    graph: core_models.Graph,
     key: str,
     definition: dict[str, Any],
     properties: list[dict[str, Any]] | None = None,
-) -> Any:
+) -> core_models.EntityCategory:
     """A defined entity category over a word, created or redefined in place."""
     category, _ = core_models.EntityCategory.objects.get_or_create(
         graph=graph, key=key, defaults={"age_name": key.lower(), "label": key}

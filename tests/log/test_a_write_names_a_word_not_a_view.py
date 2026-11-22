@@ -142,6 +142,7 @@ async def test_classifying_an_event_claims_an_event_word(
     # entity — visible only if you asked for `__typename`, since `id` is on the `Node`
     # interface and resolves either way. The claim carries its own `kind` now, so the
     # question needs no type name to ask.
+    assert classified.data is not None
     assert (
         classified.data["classifyNodes"]["instances"][0]["kind"] == "NATURAL_EVENT"
     ), "A classified event comes back as an event"
@@ -216,6 +217,7 @@ async def test_attesting_a_node_no_view_draws_does_not_fail(
         context_value=simple_api_context,
     )
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
+    assert attested.data is not None
     assert attested.data["attestEntity"]["instance"]["id"] == entity_id, (
         "The node comes back as the log has it"
     )

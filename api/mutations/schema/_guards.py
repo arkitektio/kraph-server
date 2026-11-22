@@ -26,10 +26,12 @@ accepted through `createRelationCategory`. `refuse_edge_properties` closes that
 half.
 """
 
-from django.db.models import ProtectedError, RestrictedError
+from django.db.models import Model, ProtectedError, RestrictedError
+
+from graph_engine.input_models import PropertyDefinitionInput
 
 
-def delete_or_explain(item, *, what: str, instead: str) -> None:
+def delete_or_explain(item: Model, *, what: str, instead: str) -> None:
     """Delete a schema row, or explain what evidence is holding it.
 
     `what` names the thing being deleted, `instead` the operation the caller
@@ -56,7 +58,9 @@ def delete_or_explain(item, *, what: str, instead: str) -> None:
         ) from error
 
 
-def refuse_edge_properties(key: str, property_definitions) -> None:
+def refuse_edge_properties(
+    key: str, property_definitions: list[PropertyDefinitionInput] | None
+) -> None:
     """Refuse an edge category that declares properties. No-op when it declares none.
 
     Delegates the reasoning and the message to
@@ -70,7 +74,7 @@ def refuse_edge_properties(key: str, property_definitions) -> None:
         raise ValueError("Cannot create this category:\n  - " + "\n  - ".join(problems))
 
 
-def refuse_bad_color(color) -> None:
+def refuse_bad_color(color: list[int] | None) -> None:
     """Refuse a colour that is not RGB or RGBA. No-op for None or empty.
 
     Three or four integers in [0, 255]. It was `assert len(color) in (3, 4)` at

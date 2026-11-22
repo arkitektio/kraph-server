@@ -27,6 +27,7 @@ from evidence import state as state_module
 from evidence import writer
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
 from tests.support import drawing, graphs, reads, rules, writes
 
 RECORD_METRIC = """
@@ -79,6 +80,7 @@ async def _build_measured_entity(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     entity_id = created.data["assertEntityExists"]["instance"]["id"]
 
     for value in values[1:]:
@@ -106,7 +108,7 @@ async def test_reproject_reproduces_the_projection(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Drop the drawing, replay from the log, compare properties."""
 
@@ -120,6 +122,7 @@ async def test_reproject_reproduces_the_projection(
         context_value=simple_api_context,
     )
     assert before.errors is None, f"GraphQL errors: {before.errors}"
+    assert before.data is not None
     properties_before = before.data["node"]["properties"]
 
     assert properties_before.get("avg_length") == pytest.approx(20.0), (
@@ -141,6 +144,7 @@ async def test_reproject_reproduces_the_projection(
         context_value=simple_api_context,
     )
     assert after.errors is None, f"GraphQL errors: {after.errors}"
+    assert after.data is not None
     properties_after = after.data["node"]["properties"]
 
     # `__last_derived` is a wall-clock stamp and is expected to move; everything
@@ -157,7 +161,7 @@ async def test_rebuild_survives_the_namespace_being_destroyed(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Nothing may be read out of the drawing to perform the rebuild.
 
@@ -190,7 +194,7 @@ async def test_instance_refs_survive_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Evidence links must still resolve after the vertex ids change.
 
@@ -273,6 +277,7 @@ async def _ais_with_roi(
         context_value=ctx,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     return created.data["assertEntityExists"]["instance"]["id"], object_id
 
 
@@ -315,7 +320,7 @@ async def test_a_scoped_graph_reads_the_same_value_before_and_after_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Ingest and replay agree under a bounded rule.
 
@@ -387,7 +392,7 @@ async def test_a_retraction_after_a_rebuild_does_not_widen_the_scope(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The sharper case, and the one that survived the obvious fix.
 
@@ -507,7 +512,7 @@ async def test_edge_state_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """State keyed on an edge is folded by the rebuild too.
 
@@ -561,6 +566,7 @@ async def test_edge_state_survives_a_rebuild(
         context_value=simple_api_context,
     )
     assert created.errors is None, f"GraphQL errors: {created.errors}"
+    assert created.data is not None
     edge_id = created.data["assertRelationExists"]["link"]["id"]
 
     @sync_to_async
@@ -613,7 +619,7 @@ async def test_relation_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Drop the drawing, replay from the log, and the edge comes back.
 
@@ -676,7 +682,7 @@ async def test_retracting_the_last_claim_removes_the_edge_and_the_replay_agrees(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """With no live claim the edge states nothing, and a rebuild must say the same.
 
@@ -737,7 +743,7 @@ async def test_participation_survives_a_rebuild(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The honesty test, for participation.
 
@@ -784,7 +790,12 @@ async def test_participation_survives_a_rebuild(
 # ===========================================================================
 
 
-async def _scenario_measured_entity(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_measured_entity(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """An entity with two measurements: derived properties over a datum."""
     await writes.create_entity(
         api_schema,
@@ -803,13 +814,23 @@ async def _scenario_measured_entity(api_schema, ctx, graph, table_projector) -> 
     )
 
 
-async def _scenario_two_labels(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_two_labels(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """A node two primitive categories admit: drawn once, under both labels (RFC 0019)."""
     ais = await writes.create_entity(api_schema, ctx, "AIS")
     await writes.classify(api_schema, ctx, [(ais, "Cell")])
 
 
-async def _scenario_members(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_members(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """Two observations claimed to be one thing: one vertex, two members (RFC 0018)."""
     a = await writes.create_entity(
         api_schema,
@@ -842,7 +863,12 @@ async def _scenario_members(api_schema, ctx, graph, table_projector) -> None:
     await writes.merge(api_schema, ctx, [a, b])
 
 
-async def _scenario_relation_twice(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_relation_twice(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """Two claims of one relation: one edge, `__assertion_count` of two."""
     a = await writes.create_entity(api_schema, ctx, "Cell")
     b = await writes.create_entity(api_schema, ctx, "Cell")
@@ -851,7 +877,10 @@ async def _scenario_relation_twice(api_schema, ctx, graph, table_projector) -> N
 
 
 async def _scenario_edge_under_two_categories(
-    api_schema, ctx, graph, table_projector
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """A relation claim two defined relation categories admit: two edges (RFC 0021)."""
 
@@ -878,7 +907,10 @@ async def _scenario_edge_under_two_categories(
 
 
 async def _scenario_own_word_of_a_defined_category(
-    api_schema, ctx, graph, table_projector
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """Claims under a defined category's own word, node and edge: drawn under it (RFC 0026)."""
 
@@ -915,7 +947,12 @@ async def _scenario_own_word_of_a_defined_category(
     await writes.create_relation(api_schema, ctx, "curated_touch", curated, cell)
 
 
-async def _scenario_participation(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_participation(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """An event with an input and two outputs: participation edges either side of the vertex."""
     mother = await writes.create_entity(api_schema, ctx, "Cell")
     daughter = await writes.create_entity(api_schema, ctx, "Cell")
@@ -932,7 +969,12 @@ async def _scenario_participation(api_schema, ctx, graph, table_projector) -> No
     )
 
 
-async def _scenario_retracted_node(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_retracted_node(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """A retracted individual has no vertex, and its relation is gone with it."""
     a = await writes.create_entity(api_schema, ctx, "Cell")
     b = await writes.create_entity(api_schema, ctx, "Cell")
@@ -945,7 +987,12 @@ async def _scenario_retracted_node(api_schema, ctx, graph, table_projector) -> N
     )
 
 
-async def _scenario_retracted_datum(api_schema, ctx, graph, table_projector) -> None:
+async def _scenario_retracted_datum(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph,
+    table_projector: TableProjector,
+) -> None:
     """A retracted datum stops feeding the values it informed (RFC 0023)."""
     object_id = f"roi-{uuid.uuid4().hex[:8]}"
     await writes.create_entity(
@@ -989,11 +1036,13 @@ SCENARIOS = {
 }
 
 
-def _drawn(graph) -> tuple[dict, dict]:
+def _drawn(graph: core_models.Graph) -> tuple[dict, dict]:
     return drawing.snapshot(graph), drawing.edge_snapshot(graph)
 
 
-def _replay_from_scratch(graph, table_projector) -> None:
+def _replay_from_scratch(
+    graph: core_models.Graph, table_projector: TableProjector
+) -> None:
     """The incremental path: as if no write had managed to draw.
 
     Every vertex is erased and every act of the organization is owed again, then
@@ -1017,7 +1066,12 @@ def _replay_from_scratch(graph, table_projector) -> None:
 @pytest.mark.parametrize("mode", ["rebuild", "incremental"])
 @pytest.mark.parametrize("scenario", sorted(SCENARIOS))
 async def test_the_write_path_and_a_replay_draw_the_same(
-    api_schema, api_context, test_graph, table_projector, scenario, mode
+    api_schema: kante.Schema,
+    api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
+    scenario: str,
+    mode: str,
 ) -> None:
     """C2: the drawing is a function of the log. What the write path drew and what a
     replay draws from the log alone must be identical — labels, members,
@@ -1040,7 +1094,10 @@ async def test_the_write_path_and_a_replay_draw_the_same(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_standing_cache_survives_a_rebuild_for_every_kind(
-    api_schema, api_context, test_graph, table_projector
+    api_schema: kante.Schema,
+    api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     """`CurrentStanding` is total over claim kinds (RFC 0024) and a rebuild refolds it
     from the log for every kind, the instance included."""

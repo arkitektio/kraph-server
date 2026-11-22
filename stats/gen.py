@@ -1,7 +1,6 @@
 import datetime
 from collections.abc import Callable
 from enum import Enum
-from typing import Any
 
 import kante
 import strawberry
@@ -27,7 +26,9 @@ from django.db.models.functions import (
     TruncWeek,
     TruncYear,
 )
+from django.db.models.functions.datetime import TruncBase
 from strawberry.types import Info
+from strawberry_django.fields.field import StrawberryDjangoField
 
 from evidence.values import JSONValue
 
@@ -149,7 +150,7 @@ def create_stats_type(
             raise ValueError("No datetime fields configured")
         return allowed_datetime_fields[enum_value.name.lower()]
 
-    def _truncate_expr(dt_field: str, by: Granularity):
+    def _truncate_expr(dt_field: str, by: Granularity) -> TruncBase:
         if by == Granularity.HOUR:
             return TruncHour(dt_field)
         elif by == Granularity.DAY:
@@ -174,7 +175,7 @@ def create_stats_type(
         # Cache structure: { 'field_name': { 'avg': 10, 'sum': 20... } }
         _cache: strawberry.Private[dict[str, dict[str, JSONValue]]]
 
-        def __init__(self, qs: QuerySet):
+        def __init__(self, qs: QuerySet) -> None:
             self._qs = qs
             self._cache = {}
 
@@ -224,7 +225,7 @@ def create_stats_type(
 
         @kante.django_field(description="Time-bucketed stats over a datetime field.")
         def series(
-            self,
+            self: StatsType,
             field: FieldEnum,  # type: ignore
             timestamp_field: TimestampEnum,  # type: ignore
             by: Granularity,
@@ -271,9 +272,13 @@ def create_stats_type(
     if resolvers:
         for name, (func, ret_type, desc) in resolvers.items():
 
-            def make_custom_resolver(f=func):
+            def make_custom_resolver(
+                f: Callable[[QuerySet[Model], str], object] = func,
+                desc: str = desc,
+                ret_type: type = ret_type,
+            ) -> StrawberryDjangoField:
                 @kante.django_field(description=desc)
-                def _wrapper(self, field: FieldEnum) -> ret_type:  # type: ignore
+                def _wrapper(self: StatsType, field: FieldEnum) -> ret_type:  # type: ignore
                     mf = _get_model_field(field)
                     return f(self._qs, mf)
 
@@ -288,7 +293,7 @@ def create_stats_type(
 
     # 7. Create the Root Resolver
     def stats_resolver(
-        root: Any, info: Info, filters: filters | None = None
+        root: object, info: Info, filters: filters | None = None
     ) -> StatsType:
         qs = scope(info)
 

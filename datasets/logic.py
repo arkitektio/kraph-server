@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from authentikate.models import Organization
+from authentikate.models import Organization, User
 from django.db import transaction
 
 from core import models as core_models
@@ -24,6 +24,9 @@ from graph_engine import query_ir, watermark
 from graph_engine.input_models import RenderGraphTableOrder
 
 if TYPE_CHECKING:
+    from kante.types import Info
+
+    from evidence.values import JSONValue
     from graph_engine.controller import GraphController
 
 #: How a drawn instance travels as one end of a pair: kraph's own structure for it.
@@ -49,7 +52,7 @@ def pairs_plan(query: core_models.GraphQuery) -> query_ir.PairsQueryPlan:
     return plan
 
 
-def _end(identifier: Any, obj: Any, ref: Any) -> tuple[str, str]:  # noqa: ANN401
+def _end(identifier: JSONValue, obj: JSONValue, ref: JSONValue) -> tuple[str, str]:
     """One end as ``(identifier, object)``: a drawn structure's own, else the drawn instance's."""
     if identifier:
         return str(identifier), str(obj)
@@ -57,8 +60,11 @@ def _end(identifier: Any, obj: Any, ref: Any) -> tuple[str, str]:  # noqa: ANN40
 
 
 def render_pairs(
-    controller: GraphController, query: core_models.GraphQuery, *, info: Any = None
-) -> list[tuple[tuple[str, str], tuple[str, str]]]:  # noqa: ANN401
+    controller: GraphController,
+    query: core_models.GraphQuery,
+    *,
+    info: Info | None = None,
+) -> list[tuple[tuple[str, str], tuple[str, str]]]:
     """Every distinct pair the query answers now, in a stable order: ``((src identifier, object), (tgt identifier, object))``."""
     rows = controller.render_table_plan(
         query.graph,
@@ -96,8 +102,8 @@ def run_pairs_query(
     name: str,
     description: str | None = None,
     auto: bool = False,
-    creator: Any = None,  # noqa: ANN401
-    info: Any = None,  # noqa: ANN401
+    creator: User | None = None,
+    info: Info | None = None,
 ) -> models.PairsQueryRun:
     """Run ``query`` against its view's drawing and store the answer with where the drawing stood.
 

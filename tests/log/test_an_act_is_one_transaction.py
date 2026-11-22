@@ -11,17 +11,18 @@ import asyncio
 import contextlib
 import datetime
 import uuid
-from collections.abc import AsyncIterator
-from typing import Any
+from collections.abc import AsyncIterator, Sequence
+from typing import Never
 
 import kante
 import pytest
 from asgiref.sync import sync_to_async
-from authentikate.models import Client
+from authentikate.models import Client, Organization
 from channels.layers import get_channel_layer
 from django.db import transaction
 from kante.context import HttpContext
 from kante.testing import build_ws_context
+from strawberry.types import ExecutionResult
 
 from core import models as core_models
 from evidence import channel, identity, writer
@@ -29,6 +30,7 @@ from evidence import models as evidence_models
 from graph_engine import watermark
 from graph_engine.controller import GraphController
 from graph_engine.input_models import ProvenanceContext
+from graph_engine.projection import TableProjector
 from tests.support import drawing, writes
 from tests.support.identity import static_identity as _static_identity
 from tests.support.writes import ASSERT_SAME
@@ -87,6 +89,7 @@ async def test_a_batch_of_participations_is_one_assertion(
         context_value=simple_api_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertParticipations"]
     assert len(payload["links"]) == 3
 
@@ -317,6 +320,7 @@ async def test_retracting_claims_reports_them_as_one_act(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["retractLinks"]
 
     assert payload["assertion"]["id"], (
@@ -370,12 +374,12 @@ class _StubConsumer:
 
     @contextlib.asynccontextmanager
     async def listen_to_channel(
-        self, type: str, *, timeout: float | None = None, groups: Any = ()
-    ) -> AsyncIterator[Any]:
+        self, type: str, *, timeout: float | None = None, groups: Sequence[str] = ()
+    ) -> AsyncIterator[AsyncIterator[dict[str, object]]]:
         for group in groups:
             await self.channel_layer.group_add(group, self.channel_name)
 
-        async def messages() -> Any:
+        async def messages() -> AsyncIterator[dict[str, object]]:
             while True:
                 message = await self.channel_layer.receive(self.channel_name)
                 if message.get("type") == type:
@@ -388,7 +392,9 @@ class _StubConsumer:
                 await self.channel_layer.group_discard(group, self.channel_name)
 
 
-async def _subscribe(api_schema, organization=None):
+async def _subscribe(
+    api_schema: kante.Schema, organization: Organization | None = None
+) -> tuple[asyncio.Task[None], asyncio.Queue[ExecutionResult]]:
     """Open the subscription in its own task and hand back what it receives.
 
     One task drives the generator from start to close: strawberry's extensions
@@ -409,11 +415,11 @@ async def _subscribe(api_schema, organization=None):
         token="test",
         connection_params={"token": "test"},
     )
-    received: asyncio.Queue[Any] = asyncio.Queue()
+    received: asyncio.Queue[ExecutionResult] = asyncio.Queue()
 
     async def run() -> None:
         stream = await api_schema.subscribe(SUBSCRIPTION, context_value=ctx)
-        if not hasattr(stream, "__anext__"):
+        if isinstance(stream, ExecutionResult):
             await received.put(stream)
             return
         async for result in stream:
@@ -441,7 +447,9 @@ async def _close(task: asyncio.Task) -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_committed_write_is_announced(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     task, received = await _subscribe(api_schema)
     try:
@@ -451,10 +459,12 @@ async def test_a_committed_write_is_announced(
             context_value=simple_api_context,
         )
         assert result.errors is None, f"GraphQL errors: {result.errors}"
+        assert result.data is not None
         written = result.data["assertEntityExists"]
 
         announced = await asyncio.wait_for(received.get(), timeout=5)
         assert announced.errors is None, f"GraphQL errors: {announced.errors}"
+        assert announced.data is not None
         act = announced.data["assertionRecorded"]
         assert act["id"] == written["assertion"]["id"]
         assert act["seq"] == written["assertion"]["seq"]
@@ -468,7 +478,9 @@ async def test_a_committed_write_is_announced(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_rolled_back_write_is_not_announced(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The broadcast is on commit. An assertion recorded inside a transaction that
     then fails was never part of the log, and nobody hears about it."""
@@ -498,7 +510,10 @@ async def test_a_rolled_back_write_is_not_announced(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_act_whose_claims_fail_is_not_recorded(
-    api_schema, simple_api_context, test_graph, monkeypatch
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The act is one transaction. A failure while writing the claims takes the
     assertion and its outbox row with it: the log never held an act that said
@@ -508,7 +523,7 @@ async def test_an_act_whose_claims_fail_is_not_recorded(
     before = await evidence_models.Assertion.all_objects.acount()
     pending_before = await projection_models.PendingProjection.objects.acount()
 
-    def refuse(*args, **kwargs):
+    def refuse(*args: object, **kwargs: object) -> Never:
         raise RuntimeError("the claim could not be written")
 
     monkeypatch.setattr(writer, "create_instance", refuse)
@@ -537,7 +552,10 @@ async def test_an_act_whose_claims_fail_is_not_recorded(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_another_tenants_write_is_not_heard(
-    api_schema, simple_api_context, test_graph, other_organization
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    other_organization: Organization,
 ) -> None:  # noqa: F811
     task, received = await _subscribe(api_schema)
     try:
@@ -804,6 +822,7 @@ async def test_three_instances_claimed_together_are_one_assertion(
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
 
+    assert result.data is not None
     assert (
         len({claim["id"] for claim in result.data["assertSameInstance"]["links"]}) == 2
     ), "n instances need n-1 claims to connect"
@@ -823,7 +842,7 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Protocol events raised `AttributeError` mid-write and were mislabelled.
 
@@ -895,7 +914,9 @@ async def test_a_protocol_event_with_inputs_succeeds_and_is_recorded_as_one(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_event_naming_a_missing_participant_writes_nothing(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A1 on the event path: the event, its participations and the act are one
     transaction, so an event naming a participant that does not exist leaves no

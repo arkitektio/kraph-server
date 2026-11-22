@@ -12,17 +12,18 @@ from django.core.management import call_command
 from django.core.management.base import CommandError
 
 from core import models as core_models
+from graph_engine.projection import TableProjector
 
 
 @pytest.mark.django_db(transaction=True)
-def test_reproject_requires_a_target(table_projector) -> None:
+def test_reproject_requires_a_target(table_projector: TableProjector) -> None:
     """Refusing to guess is the point: --all is destructive across every graph."""
     with pytest.raises(CommandError, match="--graph"):
         call_command("reproject", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_reproject_refuses_an_unknown_graph(table_projector) -> None:
+def test_reproject_refuses_an_unknown_graph(table_projector: TableProjector) -> None:
     """A typo in the graph name must not report a successful rebuild of nothing."""
     with pytest.raises(CommandError, match="No matching graphs"):
         call_command("reproject", graph="does-not-exist", stdout=StringIO())
@@ -30,7 +31,7 @@ def test_reproject_refuses_an_unknown_graph(table_projector) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_dry_run_touches_nothing(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """--dry-run reports the plan without dropping the projection."""
     out = StringIO()
@@ -46,7 +47,7 @@ def test_dry_run_touches_nothing(
 
 @pytest.mark.django_db(transaction=True)
 def test_rebuilds_by_name_and_reports_what_it_did(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """The counts in the output are the evidence that it ran."""
     out = StringIO()
@@ -58,14 +59,16 @@ def test_rebuilds_by_name_and_reports_what_it_did(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_rematerialize_requires_a_target(table_projector) -> None:
+def test_rematerialize_requires_a_target(table_projector: TableProjector) -> None:
     """Same refusal as `reproject`: a sweep across every graph is not a default."""
     with pytest.raises(CommandError, match="--graph"):
         call_command("rematerialize", stdout=StringIO())
 
 
 @pytest.mark.django_db(transaction=True)
-def test_rematerialize_refuses_an_unknown_graph(table_projector) -> None:
+def test_rematerialize_refuses_an_unknown_graph(
+    table_projector: TableProjector,
+) -> None:
     """A typo must not report a successful redraw of nothing."""
     with pytest.raises(CommandError, match="No matching graphs"):
         call_command("rematerialize", graph="does-not-exist", stdout=StringIO())
@@ -73,7 +76,7 @@ def test_rematerialize_refuses_an_unknown_graph(table_projector) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_dry_run_names_the_categories_it_would_redraw(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """Node categories only — an edge carries nothing derived to go stale."""
     out = StringIO()
@@ -88,7 +91,7 @@ def test_dry_run_names_the_categories_it_would_redraw(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_single_category_can_be_named(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """Because the whole-graph sweep is the expensive thing this avoids."""
     out = StringIO()
@@ -103,7 +106,7 @@ def test_a_single_category_can_be_named(
 
 @pytest.mark.django_db(transaction=True)
 def test_stale_finds_nothing_in_a_freshly_projected_graph(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """The check has to be able to say "no work", or it is not a check.
 
@@ -126,7 +129,7 @@ def test_stale_finds_nothing_in_a_freshly_projected_graph(
 
 @pytest.mark.django_db(transaction=True)
 def test_it_redraws_and_says_how_much(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """The count in the output is the evidence that it ran."""
     out = StringIO()
@@ -138,7 +141,7 @@ def test_it_redraws_and_says_how_much(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_runner_flags_go_with_incremental(table_projector) -> None:
+def test_the_runner_flags_go_with_incremental(table_projector: TableProjector) -> None:
     """`--loop` applies the outbox repeatedly; a full rebuild is a one-off act and refuses it."""
     with pytest.raises(CommandError, match="--loop goes with --incremental"):
         call_command("reproject", all=True, loop=True, stdout=StringIO())
@@ -159,7 +162,7 @@ def test_the_runner_flags_go_with_incremental(table_projector) -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_the_manual_incremental_pass_reports_an_idle_organization(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     out = StringIO()
     call_command(

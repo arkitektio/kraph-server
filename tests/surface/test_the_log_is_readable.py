@@ -8,10 +8,13 @@ limit:)` — the forward feed, gated on the committed horizon.
 import uuid
 from datetime import timedelta
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from django.utils import timezone
+from kante.context import HttpContext
 
+from core import models as core_models
 from evidence import writer
 from tests.support import reads, writes
 
@@ -25,7 +28,9 @@ RETRACT_ENTITY = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_assertions_lists_newest_first(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     written = [
         await writes.assert_entity(api_schema, simple_api_context, "AIS")
@@ -45,7 +50,9 @@ async def test_assertions_lists_newest_first(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_assertions_filters_by_who_and_when(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Every filter narrows by a column of the act — nothing about what was claimed."""
     organization = simple_api_context.request._organization
@@ -129,7 +136,11 @@ async def test_assertions_filters_by_who_and_when(
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_assertions_pages(api_schema, simple_api_context, test_graph) -> None:
+async def test_assertions_pages(
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
     for _ in range(4):
         await writes.assert_entity(api_schema, simple_api_context, "AIS")
 
@@ -155,7 +166,9 @@ async def test_assertions_pages(api_schema, simple_api_context, test_graph) -> N
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_assertion_lists_every_claim_the_act_recorded(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """One `assertEntityExists` with evidence is one act that writes four kinds of claim."""
     evidence = [
@@ -212,7 +225,9 @@ async def test_assertion_lists_every_claim_the_act_recorded(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_assertion_reports_the_arguments_the_action_ran_with(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     organization = simple_api_context.request._organization
     row = await sync_to_async(writer.create_assertion)(
@@ -232,7 +247,9 @@ async def test_assertion_reports_the_arguments_the_action_ran_with(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_standings_lists_positions_by_who_took_them(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     written = await writes.assert_entity(api_schema, simple_api_context, "AIS")
     instance_id = written["instance"]["id"]

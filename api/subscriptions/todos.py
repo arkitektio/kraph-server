@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 import kante
 import strawberry
 from asgiref.sync import sync_to_async
+from authentikate.models import Organization
 from authentikate.strawberry.directives import AuthSubscribeExtension
 from kante.types import Info
 
@@ -20,7 +21,7 @@ from todos import types as todo_types
 
 
 @sync_to_async
-def _fetch(organization, item_id: str) -> todo_models.TodoItem | None:
+def _fetch(organization: Organization, item_id: str) -> todo_models.TodoItem | None:
     return (
         todo_models.TodoItem.objects.filter(
             pk=item_id, list__project__organization=organization
@@ -31,7 +32,7 @@ def _fetch(organization, item_id: str) -> todo_models.TodoItem | None:
 
 
 @sync_to_async
-def _list_is_ours(organization, list_id: str) -> bool:
+def _list_is_ours(organization: Organization, list_id: str) -> bool:
     return todo_models.TodoList.objects.filter(
         pk=list_id, project__organization=organization
     ).exists()

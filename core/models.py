@@ -1,6 +1,6 @@
 import random
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Protocol
 
 from arkitekt_datalayer import models as datalayer_models
 from arkitekt_service.service.described import Described
@@ -25,6 +25,25 @@ if TYPE_CHECKING:
     # to keep `core` from reading `evidence` at import time -- so the name was
     # undefined at every one of those annotations (ruff F821).
     from evidence.models import StructureKind
+    from graph_engine.input_models import (
+        GraphDefinitionModel,
+        PropertyDefinitionInput,
+    )
+
+
+class _RequestContext(Protocol):
+    @property
+    def request(self) -> object: ...
+
+
+class RequestInfo(Protocol):
+    """What `validate_definition_editable` reads of a resolver's `info`: its request.
+
+    Tests pass a stand-in carrying only that, so the guard asks for no more.
+    """
+
+    @property
+    def context(self) -> _RequestContext: ...
 
 
 class KindDiscriminatedModel(models.Model):
@@ -44,7 +63,7 @@ class KindDiscriminatedModel(models.Model):
     class Meta:
         abstract = True
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         if not self.kind:
             kind = type(self).KIND
             if kind is not None:
@@ -52,7 +71,9 @@ class KindDiscriminatedModel(models.Model):
         return super().save(*args, **kwargs)
 
 
-def _matching_structure_kinds(organization, descriptor) -> "QuerySet":
+def _matching_structure_kinds(
+    organization: Organization, descriptor: StructureDescriptorInput
+) -> "QuerySet[StructureKind]":
     """Structure kinds in an organization that a descriptor selects.
 
     Only `identifiers` survives the move to organization vocabulary. A
@@ -196,39 +217,39 @@ class Graph(models.Model):
         return await self.entity_categories.aget(key=key)
 
     @property
-    def entity_categories(self):
+    def entity_categories(self) -> "QuerySet[EntityCategory]":
         return EntityCategory.objects.filter(graph=self)
 
     @property
-    def relation_categories(self):
+    def relation_categories(self) -> "QuerySet[RelationCategory]":
         return RelationCategory.objects.filter(graph=self)
 
     @property
-    def structure_relation_categories(self):
+    def structure_relation_categories(self) -> "QuerySet[StructureRelationCategory]":
         return StructureRelationCategory.objects.filter(graph=self)
 
     @property
-    def structure_categories(self):
+    def structure_categories(self) -> "QuerySet[StructureCategory]":
         return StructureCategory.objects.filter(graph=self)
 
     @property
-    def measurement_categories(self):
+    def measurement_categories(self) -> "QuerySet[MeasurementCategory]":
         return MeasurementCategory.objects.filter(graph=self)
 
     @property
-    def protocol_event_categories(self):
+    def protocol_event_categories(self) -> "QuerySet[ProtocolEventCategory]":
         return ProtocolEventCategory.objects.filter(graph=self)
 
     @property
-    def natural_event_categories(self):
+    def natural_event_categories(self) -> "QuerySet[NaturalEventCategory]":
         return NaturalEventCategory.objects.filter(graph=self)
 
     @property
-    def node_categories(self):
+    def node_categories(self) -> "QuerySet[NodeCategory]":
         return NodeCategory.objects.filter(graph=self)
 
     @property
-    def edge_categories(self):
+    def edge_categories(self) -> "QuerySet[EdgeCategory]":
         return EdgeCategory.objects.filter(graph=self)
 
     @property
@@ -237,7 +258,7 @@ class Graph(models.Model):
         return self.schemas.filter(is_active=True).first()
 
     @property
-    def definition(self):
+    def definition(self) -> "GraphDefinitionModel | None":
         """Get the GraphDefinitionModel from the active schema."""
         from graph_engine.input_models import GraphDefinitionModel
 
@@ -246,7 +267,7 @@ class Graph(models.Model):
             return GraphDefinitionModel.model_validate(schema.definition)
         return None
 
-    def validate_definition_editable(self, info: Info | Any) -> None:
+    def validate_definition_editable(self, info: "Info | RequestInfo") -> None:
         """Refuse a schema change from anyone but the owner, a curator or Kraph's admin, or a superuser.
 
         This replaced the per-action `rules` lists (RFC 0013). Tenancy
@@ -271,7 +292,7 @@ class Graph(models.Model):
             f"Changing graph '{self.name}' needs its owner, a curator or Kraph's admin — the schema is the view's contract, and tenancy alone does not grant rewriting it."
         )
 
-    def validate_accessible(self, membership: Membership, scopes: list[str]):
+    def validate_accessible(self, membership: Membership, scopes: list[str]) -> bool:
         """Validate if the graph is accessible for a given membership and scopes."""
         if self.organization_id != membership.organization_id:
             raise PermissionError("You are not allowed to access this graph")
@@ -363,7 +384,7 @@ class GraphSchema(models.Model):
         active_marker = " (active)" if self.is_active else ""
         return f"{self.graph.name} v{self.version}{active_marker}"
 
-    def save(self, *args, **kwargs) -> None:
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Assign the next index and content hash before saving."""
         if self.index is None:
             last_schema = (
@@ -395,7 +416,7 @@ class GraphSchema(models.Model):
         return cls.objects.filter(graph=graph, is_active=True).first()
 
 
-def random_color():
+def random_color() -> tuple[int, ...]:
     levels = range(32, 256, 32)
     return tuple(random.choice(levels) for _ in range(3))
 
@@ -636,7 +657,7 @@ class Category(KindDiscriminatedModel):
             ),
         ]
 
-    def save(self, *args, **kwargs):
+    def save(self, *args: Any, **kwargs: Any) -> None:
         """Stamp the kind, then make sure this category declares a word.
 
         Minting the term here rather than at each call site makes it an invariant
@@ -677,7 +698,7 @@ class Category(KindDiscriminatedModel):
         return recast
 
     @property
-    def defined_properties(self):
+    def defined_properties(self) -> "list[PropertyDefinitionInput]":
         from graph_engine.input_models import PropertyDefinitionInput
 
         return (
@@ -687,7 +708,7 @@ class Category(KindDiscriminatedModel):
         )
 
     @property
-    def property_map(self):
+    def property_map(self) -> "dict[str, PropertyDefinitionInput]":
         return {prodf.key: prodf for prodf in self.defined_properties}
 
     @classmethod
@@ -695,7 +716,7 @@ class Category(KindDiscriminatedModel):
         """Convert an entity key to a valid AGE name by replacing invalid characters."""
         return "".join(e for e in key if e.isalnum()).lower()
 
-    def relevant_queries(self):
+    def relevant_queries(self) -> "QuerySet[GraphQuery]":
         return GraphQuery.objects.filter(graph=self.graph, relevant_for=self.pk)
 
 
@@ -790,10 +811,10 @@ class NodeCategory(Category):
     class Meta:
         proxy = True
 
-    def get_age_vertex_name(self):
+    def get_age_vertex_name(self) -> str:
         raise NotImplementedError("Not implemented needs to be implemented")
 
-    def get_age_type_name(self):
+    def get_age_type_name(self) -> str:
         raise NotImplementedError("Not implemented needs to be implemented")
 
     @classmethod
@@ -847,10 +868,10 @@ class NaturalEventCategory(NodeCategory):
     KIND = enums.CategoryKindChoices.NATURAL_EVENT
     KINDS = (enums.CategoryKindChoices.NATURAL_EVENT,)
 
-    def get_inrole_vertex_name(self, role):
+    def get_inrole_vertex_name(self, role: str) -> str:
         return role
 
-    def get_outrole_vertex_name(self, role):
+    def get_outrole_vertex_name(self, role: str) -> str:
         return role
 
     def get_age_vertex_name(self) -> str:
@@ -871,11 +892,11 @@ class NaturalEventCategory(NodeCategory):
     AGE_OUTPUT_EDGE = "CAME_OUT_OF"
 
     @property
-    def collected_in_role_vertex_name(self):
+    def collected_in_role_vertex_name(self) -> list[str]:
         return [self.AGE_INPUT_EDGE]
 
     @property
-    def collected_out_role_vertex_name(self):
+    def collected_out_role_vertex_name(self) -> list[str]:
         return [self.AGE_OUTPUT_EDGE]
 
     class Meta:
@@ -902,13 +923,13 @@ class ProtocolEventCategory(NodeCategory):
     KIND = enums.CategoryKindChoices.PROTOCOL_EVENT
     KINDS = (enums.CategoryKindChoices.PROTOCOL_EVENT,)
 
-    def get_inrole_vertex_name(self, role):
+    def get_inrole_vertex_name(self, role: str) -> str:
         return role
 
-    def get_outrole_vertex_name(self, role):
+    def get_outrole_vertex_name(self, role: str) -> str:
         return role
 
-    def get_age_vertex_name(self):
+    def get_age_vertex_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
@@ -923,11 +944,11 @@ class ProtocolEventCategory(NodeCategory):
     AGE_OUTPUT_EDGE = "PRODUCED"
 
     @property
-    def collected_in_role_vertex_name(self):
+    def collected_in_role_vertex_name(self) -> list[str]:
         return [self.AGE_INPUT_EDGE]
 
     @property
-    def collected_out_role_vertex_name(self):
+    def collected_out_role_vertex_name(self) -> list[str]:
         return [self.AGE_OUTPUT_EDGE]
 
     class Meta:
@@ -984,7 +1005,7 @@ class EntityCategory(NodeCategory):
     KIND = enums.CategoryKindChoices.ENTITY
     KINDS = (enums.CategoryKindChoices.ENTITY,)
 
-    def get_age_vertex_name(self):
+    def get_age_vertex_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
@@ -1001,7 +1022,7 @@ class MeasurementCategory(EdgeCategory):
     KIND = enums.CategoryKindChoices.MEASUREMENT
     KINDS = (enums.CategoryKindChoices.MEASUREMENT,)
 
-    def get_age_edge_name(self):
+    def get_age_edge_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
@@ -1094,7 +1115,7 @@ class RelationCategory(EdgeCategory):
 
         return self.graph.entity_categories.filter(**kwargs).distinct()
 
-    def get_age_edge_name(self):
+    def get_age_edge_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:
@@ -1148,7 +1169,7 @@ class StructureRelationCategory(EdgeCategory):
             self.graph.organization, self.target_definition_model
         )
 
-    def get_age_edge_name(self):
+    def get_age_edge_name(self) -> str:
         return self.age_name
 
     def get_age_type_name(self) -> str:

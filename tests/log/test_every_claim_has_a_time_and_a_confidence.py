@@ -8,19 +8,22 @@ they gave none. Both are readable back through the API.
 
 from datetime import UTC, datetime
 
+import kante
 import pytest
 from authentikate.models import Organization
 from django.db import IntegrityError, transaction
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
 from evidence import writer
+from graph_engine.projection import TableProjector
 from tests.support import claims, graphs, writes
 
 
 @pytest.mark.django_db(transaction=True)
 def test_observed_at_defaults_to_the_assertions_time(
-    organization, assertion: evidence_models.Assertion
+    organization: Organization, assertion: evidence_models.Assertion
 ) -> None:
     """Silence means "as of when I said so": every claim table and the standing agree."""
     term = writer.ensure_term(organization, "ENTITY", "Cell")
@@ -53,7 +56,7 @@ def test_observed_at_defaults_to_the_assertions_time(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_explicit_time_of_observation_is_stored(
-    organization, assertion: evidence_models.Assertion
+    organization: Organization, assertion: evidence_models.Assertion
 ) -> None:
     term = writer.ensure_term(organization, "NATURAL_EVENT", "Mitosis")
     event = writer.create_instance(
@@ -83,7 +86,7 @@ def test_an_explicit_time_of_observation_is_stored(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_direct_row_insert_gets_the_default_too(
-    organization, assertion: evidence_models.Assertion
+    organization: Organization, assertion: evidence_models.Assertion
 ) -> None:
     """The default lives on the model, not only in the writer: the column is
     NOT NULL, and a caller that bypasses `writer.create_instance` must not
@@ -121,7 +124,7 @@ ASSERT_METRIC = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_events_time_of_occurrence_round_trips(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """A natural event happened at a time; that time is the claim's `observedAt`
     and is not its `assertedAt`."""
@@ -155,7 +158,7 @@ async def test_an_events_time_of_occurrence_round_trips(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_relation_and_a_metric_carry_observed_at(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     a = (
         await writes.execute(
@@ -212,7 +215,7 @@ async def test_a_relation_and_a_metric_carry_observed_at(
     ), "was `timestamp`, unix milliseconds"
 
 
-def _rebuild_by_id(graph_id: str, table_projector) -> core_models.Graph:
+def _rebuild_by_id(graph_id: str, table_projector: TableProjector) -> core_models.Graph:
     graph = core_models.Graph.objects.get(pk=graph_id)
     graphs.rebuild(graph, table_projector)
     return graph
@@ -276,7 +279,7 @@ def test_recorded_at_is_not_asserted_at(
 
 @pytest.mark.django_db(transaction=True)
 def test_every_claim_may_carry_a_confidence(
-    organization, assertion: evidence_models.Assertion
+    organization: Organization, assertion: evidence_models.Assertion
 ) -> None:
     term = writer.ensure_term(organization, "ENTITY", "Cell")
     instance = writer.create_instance(
@@ -314,7 +317,7 @@ def test_every_claim_may_carry_a_confidence(
 
 @pytest.mark.django_db(transaction=True)
 def test_silence_is_null_not_a_number(
-    organization, assertion: evidence_models.Assertion
+    organization: Organization, assertion: evidence_models.Assertion
 ) -> None:
     """No default: a claim without a number is one nobody scored, which is not 1.0 and not 0.0."""
     term = writer.ensure_term(organization, "ENTITY", "Cell")
@@ -349,7 +352,7 @@ def test_silence_is_null_not_a_number(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("bad", [-0.1, 1.5])
 def test_the_database_refuses_a_confidence_outside_the_unit_interval(
-    organization, assertion: evidence_models.Assertion, bad: float
+    organization: Organization, assertion: evidence_models.Assertion, bad: float
 ) -> None:
     """The input layer refuses it first; the constraint is for every writer that is not the API."""
     term = writer.ensure_term(organization, "ENTITY", "Cell")
@@ -391,7 +394,9 @@ def test_the_database_refuses_a_confidence_outside_the_unit_interval(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_confidence_round_trips_on_an_instance_a_link_and_a_standing(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     a = (
         await writes.execute(
@@ -446,7 +451,7 @@ async def test_confidence_round_trips_on_an_instance_a_link_and_a_standing(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("bad", [-0.1, 1.5])
 async def test_the_input_refuses_a_confidence_outside_the_unit_interval(
-    api_schema, simple_api_context, bad: float
+    api_schema: kante.Schema, simple_api_context: HttpContext, bad: float
 ) -> None:
     result = await api_schema.execute(
         writes.ASSERT_ENTITY_WITH_CONFIDENCE,

@@ -258,9 +258,9 @@ def neighbor_refs(
     nodes = list(nodes)
     out: dict[str, list[str]] = {}
     for node, edges in (
-        (node, edges)
-        for node in nodes
-        for edges in [drawn_incident(controller, graph, [node], spec)[node.unique_id]]
+        (each, edges)
+        for each in nodes
+        for edges in [drawn_incident(controller, graph, [each], spec)[each.unique_id]]
     ):
         seen: dict[str, None] = {}
         for edge in edges:

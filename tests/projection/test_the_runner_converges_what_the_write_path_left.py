@@ -14,29 +14,35 @@ stayed owed until an operator noticed the lag.
 import datetime
 import threading
 import time
+from typing import NoReturn
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from authentikate.models import Organization
 from django.db import connection
+from kante.context import HttpContext
 
 from core import models as core_models
 from graph_engine import locks, projector, runner, watermark
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
+from graph_engine.projector import DrawingHost
 from tests.support import drawing, graphs, sessions, writes
 
 
-def _down(*args, **kwargs):
+def _down(*args: object, **kwargs: object) -> NoReturn:
     raise RuntimeError("projector down")
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_pass_draws_the_pending_act_and_empties_the_outbox(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(projector, "reproject_refs", _down)
     failed = await api_schema.execute(
@@ -44,6 +50,7 @@ async def test_a_pass_draws_the_pending_act_and_empties_the_outbox(
         variable_values={"input": {"term": "AIS", "supportingEvidence": []}},
         context_value=simple_api_context,
     )
+    assert failed.data is not None
     assert (
         failed.errors is None and failed.data["assertEntityExists"]["pending"] is True
     )
@@ -51,7 +58,7 @@ async def test_a_pass_draws_the_pending_act_and_empties_the_outbox(
     monkeypatch.undo()
 
     @sync_to_async
-    def converge():
+    def converge() -> tuple[list[runner.Pass], int, int, watermark.Position]:
         assert drawing.vertices_with_ref(test_graph, ref) == 0, (
             "the failed draw left nothing"
         )
@@ -74,7 +81,7 @@ async def test_a_pass_draws_the_pending_act_and_empties_the_outbox(
 
 @pytest.mark.django_db(transaction=True)
 def test_an_idle_organization_costs_no_lock(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     [done] = runner.run_once(
         GraphController(projector=table_projector), [test_graph.organization]
@@ -86,11 +93,11 @@ def test_an_idle_organization_costs_no_lock(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_pass_leaves_an_organization_another_session_is_redrawing(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(projector, "reproject_refs", _down)
     await api_schema.execute(
@@ -101,7 +108,7 @@ async def test_a_pass_leaves_an_organization_another_session_is_redrawing(
     monkeypatch.undo()
 
     @sync_to_async
-    def with_the_lock_held_elsewhere():
+    def with_the_lock_held_elsewhere() -> tuple[runner.Pass, int, runner.Pass]:
         other = sessions.raw_connection()
         try:
             with other.cursor() as cursor:
@@ -133,7 +140,7 @@ async def test_a_pass_leaves_an_organization_another_session_is_redrawing(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_rebuild_waits_for_the_organizations_lock(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     other = sessions.raw_connection()
     finished = threading.Event()
@@ -191,11 +198,11 @@ def test_the_lock_is_not_granted_twice_across_sessions(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_young_row_is_left_for_the_next_pass(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The grace window: a row the request may still be drawing is not raced."""
     monkeypatch.setattr(projector, "reproject_refs", _down)
@@ -207,7 +214,7 @@ async def test_a_young_row_is_left_for_the_next_pass(
     monkeypatch.undo()
 
     @sync_to_async
-    def passes():
+    def passes() -> tuple[runner.Pass, int, int, int, runner.Pass, int]:
         controller = GraphController(projector=table_projector)
         [young] = runner.run_once(
             controller,
@@ -239,7 +246,7 @@ async def test_a_young_row_is_left_for_the_next_pass(
 
 @pytest.mark.django_db(transaction=True)
 def test_the_loop_runs_one_pass_and_stops(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     stop = threading.Event()
     started = time.monotonic()
@@ -263,11 +270,15 @@ def test_the_loop_runs_one_pass_and_stops(
 
 @pytest.mark.django_db(transaction=True)
 def test_a_failing_organization_is_backed_off_not_fatal(
-    test_graph: core_models.Graph, table_projector, monkeypatch
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     calls = []
 
-    def explode(controller, organizations, **kwargs):
+    def explode(
+        controller: DrawingHost, organizations: list[Organization], **kwargs: object
+    ) -> NoReturn:
         calls.append(organizations[0].pk)
         raise RuntimeError("poison pill")
 

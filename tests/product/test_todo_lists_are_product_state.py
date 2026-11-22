@@ -12,6 +12,7 @@ import pytest
 from asgiref.sync import sync_to_async
 from authentikate.models import Organization, User
 from kante.context import HttpContext
+from strawberry.types import ExecutionResult
 
 from evidence import models as evidence_models
 from projects import models as project_models
@@ -24,7 +25,7 @@ IMAGES = [{"identifier": "@mikro/image", "object": str(n)} for n in (1, 2, 3)]
 
 
 async def _run(
-    schema: kante.Schema, context: HttpContext, document: str, **variables
+    schema: kante.Schema, context: HttpContext, document: str, **variables: object
 ) -> dict:
     result = await schema.execute(
         document, variable_values=variables, context_value=context
@@ -58,7 +59,7 @@ async def _item(
     context: HttpContext,
     todo_list: str,
     title: str = "Annotate",
-    **extra,
+    **extra: object,
 ) -> dict:
     created = await _run(
         schema,
@@ -70,7 +71,7 @@ async def _item(
 
 
 async def test_an_item_carries_its_objects_and_writes_no_evidence(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """Objects are plain (identifier, object) pairs: no Structure is minted, no Assertion recorded.
 
@@ -95,7 +96,9 @@ async def test_an_item_carries_its_objects_and_writes_no_evidence(
     assert await evidence_models.Structure.all_objects.acount() == structures
 
 
-async def test_attaching_an_object_twice_keeps_one(api_schema, api_context) -> None:
+async def test_attaching_an_object_twice_keeps_one(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     item = await _item(
         api_schema,
         api_context,
@@ -113,7 +116,9 @@ async def test_attaching_an_object_twice_keeps_one(api_schema, api_context) -> N
     assert [s["object"] for s in data["attachToTodoItem"]["structures"]] == ["1", "2"]
 
 
-async def test_moving_an_item_renumbers_its_new_column(api_schema, api_context) -> None:
+async def test_moving_an_item_renumbers_its_new_column(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     todo_list = await _list(api_schema, api_context)
     a = await _item(api_schema, api_context, todo_list, "a")
     await _item(api_schema, api_context, todo_list, "b")
@@ -142,7 +147,7 @@ async def test_moving_an_item_renumbers_its_new_column(api_schema, api_context) 
 
 
 async def test_ticking_the_last_object_finishes_the_item_and_reopening_one_takes_it_back(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     item = await _item(
         api_schema,
@@ -181,7 +186,7 @@ async def test_ticking_the_last_object_finishes_the_item_and_reopening_one_takes
 
 
 async def test_starting_an_object_moves_its_to_do_item_to_doing_and_finishing_keeps_who_started(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     item = await _item(
         api_schema,
@@ -242,7 +247,7 @@ async def test_starting_an_object_moves_its_to_do_item_to_doing_and_finishing_ke
 
 
 async def test_mine_is_the_item_s_assignee_else_its_list_s(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """The static token's sub is "1": items for "1" directly, or on a list for "1" with no assignee of their own."""
     for_me = await _list(api_schema, api_context, assignee="1")
@@ -262,7 +267,7 @@ async def test_mine_is_the_item_s_assignee_else_its_list_s(
 
 
 async def test_items_are_found_by_the_object_they_carry(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """Once each, however many other objects the item carries: the filter joins its objects once."""
     todo_list = await _list(api_schema, api_context)
@@ -280,7 +285,7 @@ async def test_items_are_found_by_the_object_they_carry(
 
 
 async def test_another_tenant_s_todos_are_neither_listed_nor_movable(
-    api_schema, api_context, other_organization: Organization
+    api_schema: kante.Schema, api_context: HttpContext, other_organization: Organization
 ) -> None:
     @sync_to_async
     def foreign_item() -> todo_models.TodoItem:
@@ -312,7 +317,9 @@ async def test_another_tenant_s_todos_are_neither_listed_nor_movable(
     assert (await todo_models.TodoItem.objects.aget(pk=item.pk)).status == "TODO"
 
 
-async def test_the_board_reads_what_its_pages_ask_for(api_schema, api_context) -> None:
+async def test_the_board_reads_what_its_pages_ask_for(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     """The reads the app's pages make, nested as they are there: a list with its progress and cards, a project's lists, an item's place."""
     todo_list = await _list(api_schema, api_context)
     item = await _item(
@@ -355,14 +362,14 @@ async def test_the_board_reads_what_its_pages_ask_for(api_schema, api_context) -
 
 
 @pytest.fixture
-def query_counter(monkeypatch):
+def query_counter(monkeypatch: pytest.MonkeyPatch) -> dict[str, int]:
     """Counts SQL statements on every thread (the schema's resolvers run on sync_to_async's)."""
     from django.db.backends import utils
 
     count = {"n": 0}
     original = utils.CursorWrapper._execute
 
-    def counted(self, *args, **kwargs):
+    def counted(self: utils.CursorWrapper, *args: object, **kwargs: object) -> object:
         count["n"] += 1
         return original(self, *args, **kwargs)
 
@@ -371,7 +378,7 @@ def query_counter(monkeypatch):
 
 
 async def test_list_progress_is_counted_in_the_list_query_not_per_list(
-    api_schema, api_context, query_counter
+    api_schema: kante.Schema, api_context: HttpContext, query_counter: dict[str, int]
 ) -> None:
     """`progress` is an annotation: reading it over five lists costs what it costs over one."""
     first = await _list(api_schema, api_context)
@@ -396,7 +403,7 @@ async def test_list_progress_is_counted_in_the_list_query_not_per_list(
 
 
 async def test_an_item_is_found_once_by_an_identifier_it_carries_many_times(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     todo_list = await _list(api_schema, api_context)
     await _item(api_schema, api_context, todo_list, "three images", structures=IMAGES)
@@ -411,7 +418,9 @@ async def test_an_item_is_found_once_by_an_identifier_it_carries_many_times(
     assert [item["title"] for item in data["todoItems"]] == ["three images"]
 
 
-async def test_identifier_and_object_name_one_object(api_schema, api_context) -> None:
+async def test_identifier_and_object_name_one_object(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     """An item with image 1 and table 2 does not carry "image 2"."""
     todo_list = await _list(api_schema, api_context)
     await _item(
@@ -440,7 +449,7 @@ async def test_identifier_and_object_name_one_object(api_schema, api_context) ->
 
 
 async def test_an_object_s_track_is_its_own_rows_only(
-    api_schema, api_context, other_organization: Organization
+    api_schema: kante.Schema, api_context: HttpContext, other_organization: Organization
 ) -> None:
     """One row per item the object is on, with the item's progress instead of its other objects; another tenant's row is not among them."""
     todo_list = await _list(api_schema, api_context)
@@ -493,7 +502,7 @@ async def test_an_object_s_track_is_its_own_rows_only(
 
 
 async def test_the_summary_counts_the_items_the_filter_selects(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     mine = await _list(api_schema, api_context, assignee="1")
     others = await _list(api_schema, api_context, assignee="someone-else")
@@ -527,7 +536,7 @@ async def test_the_summary_counts_the_items_the_filter_selects(
 
 
 async def test_marking_all_of_an_item_s_objects_done_at_once_finishes_it(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     item = await _item(
         api_schema, api_context, await _list(api_schema, api_context), structures=IMAGES
@@ -552,7 +561,7 @@ async def test_marking_all_of_an_item_s_objects_done_at_once_finishes_it(
 
 
 async def test_marking_whole_items_done_names_the_items_not_their_objects(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """`items`: "mark all done" for a selection of cards, without reading their objects first.
 
@@ -592,7 +601,9 @@ async def test_marking_whole_items_done_names_the_items_not_their_objects(
     )
 
 
-async def test_a_bulk_status_change_names_something(api_schema, api_context) -> None:
+async def test_a_bulk_status_change_names_something(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     result = await api_schema.execute(
         writes.SET_TODO_STRUCTURES_STATUS,
         variable_values={"input": {"status": "DONE"}},
@@ -602,7 +613,7 @@ async def test_a_bulk_status_change_names_something(api_schema, api_context) -> 
 
 
 async def test_a_bulk_status_change_with_a_foreign_item_changes_nothing(
-    api_schema, api_context, other_organization: Organization
+    api_schema: kante.Schema, api_context: HttpContext, other_organization: Organization
 ) -> None:
     item = await _item(
         api_schema,
@@ -642,7 +653,7 @@ async def test_a_bulk_status_change_with_a_foreign_item_changes_nothing(
 
 
 async def test_a_bulk_status_change_with_a_foreign_object_changes_nothing(
-    api_schema, api_context, other_organization: Organization
+    api_schema: kante.Schema, api_context: HttpContext, other_organization: Organization
 ) -> None:
     item = await _item(
         api_schema,
@@ -684,7 +695,7 @@ async def test_a_bulk_status_change_with_a_foreign_object_changes_nothing(
 
 
 async def test_assigning_an_item_changes_only_who_it_is_for(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     todo_list = await _list(api_schema, api_context, assignee="tiago")
     created = await _run(
@@ -730,7 +741,9 @@ async def test_assigning_an_item_changes_only_who_it_is_for(
     assert relisted["assignee"] == "maria"
 
 
-async def test_an_item_moves_onto_another_list(api_schema, api_context) -> None:
+async def test_an_item_moves_onto_another_list(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     source, target = (
         await _list(api_schema, api_context),
         await _list(api_schema, api_context),
@@ -758,14 +771,15 @@ TODO_CHANGED = """
 """
 
 
-async def _next(received, timeout: float = 5) -> dict:
+async def _next(received: asyncio.Queue[ExecutionResult], timeout: float = 5) -> dict:
     result = await asyncio.wait_for(received.get(), timeout=timeout)
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["todoChanged"]
 
 
 async def test_a_board_hears_its_items_change_as_they_commit(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     from tests.support import live
     from tests.support.identity import static_identity
@@ -810,7 +824,9 @@ async def test_a_board_hears_its_items_change_as_they_commit(
         await live.close(task)
 
 
-async def test_a_board_does_not_hear_another_list(api_schema, api_context) -> None:
+async def test_a_board_does_not_hear_another_list(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     from tests.support import live
     from tests.support.identity import static_identity
     from todos import channel as todo_channel
@@ -841,7 +857,7 @@ OBJECT_TODO_CHANGED = """
 
 
 async def test_an_object_hears_the_items_it_is_on_and_the_one_that_lets_it_go(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """`identifier` + `object`: a page's todo track hears its own object's items, not the organization's.
 
@@ -907,7 +923,7 @@ TODO_ITEMS_DUE = """
 
 
 async def test_an_item_without_a_date_is_due_when_its_list_is(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     todo_list = await _list(api_schema, api_context)
     await _run(
@@ -946,7 +962,9 @@ async def test_an_item_without_a_date_is_due_when_its_list_is(
     ).description == "carefully"
 
 
-async def test_overdue_is_past_due_and_not_done(api_schema, api_context) -> None:
+async def test_overdue_is_past_due_and_not_done(
+    api_schema: kante.Schema, api_context: HttpContext
+) -> None:
     todo_list = await _list(api_schema, api_context, assignee="1")
     late = await _item(
         api_schema, api_context, todo_list, "late", dueAt="2020-01-01T00:00:00+00:00"
@@ -988,7 +1006,7 @@ async def test_overdue_is_past_due_and_not_done(api_schema, api_context) -> None
 
 
 async def test_a_members_projects_are_the_ones_they_made_or_work_in(
-    api_schema, api_context
+    api_schema: kante.Schema, api_context: HttpContext
 ) -> None:
     """`ProjectFilter.member`: made by them, or holding a list or an item assigned to them — each project once."""
 

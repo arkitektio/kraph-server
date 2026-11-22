@@ -6,6 +6,7 @@ mutations.
 """
 
 from collections.abc import Callable
+from typing import Any
 
 import kante
 import strawberry
@@ -40,8 +41,8 @@ def field(
     resolver: Callable[..., object] | None = None,
     *,
     scope: str = "kraph_read",
-    **kwargs,
-):  # noqa: ANN003, ANN201
+    **kwargs: Any,
+) -> Any:  # noqa: ANN401 -- as strawberry_django.field: the value of `x: T = field()`
     """A field an app needs ``scope`` for (``kraph_read``, unless it says otherwise)."""
     return kante.django_field(
         resolver, extensions=[AuthExtension(scopes=[scope])], **kwargs
@@ -49,8 +50,8 @@ def field(
 
 
 def mutation(
-    scope: str = "kraph_assert", roles: list[str] | None = None, **kwargs
-) -> strawberry.mutation:  # noqa: ANN003
+    scope: str = "kraph_assert", roles: list[str] | None = None, **kwargs: Any
+) -> strawberry.mutation:
     """A write: an app needs ``scope`` for it, a member one of ``roles`` (``kraph_editor`` unless it says
     otherwise; ``kraph_admin`` holds every role). Tenancy is still the resolver's own check."""
     return kante.django_mutation(
@@ -59,12 +60,12 @@ def mutation(
     )
 
 
-def schema_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
+def schema_mutation(**kwargs: Any) -> strawberry.mutation:
     """A change to the vocabulary: ``kraph_schema`` for the app, ``kraph_curator`` for the member."""
     return mutation(scope="kraph_schema", roles=[CURATOR], **kwargs)
 
 
-def access_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
+def access_mutation(**kwargs: Any) -> strawberry.mutation:
     """A mutation that hands out read credentials: a read, for whoever may see what it reads."""
     return kante.django_mutation(
         extensions=[AuthExtension(scopes=["kraph_read"])], **kwargs
@@ -426,7 +427,7 @@ class Query:
     )
 
 
-def upload_mutation(**kwargs) -> strawberry.mutation:  # noqa: ANN003
+def upload_mutation(**kwargs: Any) -> strawberry.mutation:
     """A mutation that hands out or finishes upload credentials: gated by ``datalayer.upload_roles``,
     ``kraph_editor`` when it names none.
 

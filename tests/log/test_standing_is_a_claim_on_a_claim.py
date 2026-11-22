@@ -15,6 +15,7 @@ from datetime import UTC, datetime
 
 import kante
 import pytest
+from authentikate.models import Organization
 from kante.context import HttpContext
 
 from core import models as core_models
@@ -56,14 +57,17 @@ async def _make_structure(
         context_value=ctx,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     return result.data["assertStructureExists"]["structure"]["id"]
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retracted_structure_can_be_attested(
-    api_schema, simple_api_context, test_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
     structure_id = await _make_structure(api_schema, simple_api_context, test_graph)
 
     retracted = await api_schema.execute(
@@ -80,6 +84,7 @@ async def test_a_retracted_structure_can_be_attested(
     )
 
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
+    assert attested.data is not None
     assert attested.data["attestStructure"]["structure"]["id"] == structure_id
 
     # Both positions stay on the record — an attestation is new evidence, not an
@@ -90,6 +95,7 @@ async def test_a_retracted_structure_can_be_attested(
         context_value=simple_api_context,
     )
     assert standings.errors is None, f"GraphQL errors: {standings.errors}"
+    assert standings.data is not None
     positions = [s["stands"] for s in standings.data["standings"]]
     assert True in positions and False in positions, (
         f"Both positions should survive, got {positions}"
@@ -99,8 +105,10 @@ async def test_a_retracted_structure_can_be_attested(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retracted_metric_can_be_attested(
-    api_schema, simple_api_context, test_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
     structure_id = await _make_structure(api_schema, simple_api_context, test_graph)
 
     metrics = await api_schema.execute(
@@ -109,6 +117,7 @@ async def test_a_retracted_metric_can_be_attested(
         context_value=simple_api_context,
     )
     assert metrics.errors is None, f"GraphQL errors: {metrics.errors}"
+    assert metrics.data is not None
     metric_id = metrics.data["metricsForStructure"][0]["id"]
 
     retracted = await api_schema.execute(
@@ -125,14 +134,17 @@ async def test_a_retracted_metric_can_be_attested(
     )
 
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
+    assert attested.data is not None
     assert attested.data["attestMetric"]["metric"]["id"] == metric_id
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retracted_link_can_be_attested(
-    api_schema, simple_api_context, test_graph
-):
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+) -> None:
     """One mutation for every `Link.Kind` — here a relation between two entities.
 
     A relation rather than a classification: `connections` deliberately reports
@@ -160,6 +172,7 @@ async def test_a_retracted_link_can_be_attested(
             context_value=simple_api_context,
         )
         assert created.errors is None, f"GraphQL errors: {created.errors}"
+        assert created.data is not None
         return created.data["assertEntityExists"]["instance"]["id"]
 
     source_id, target_id = await _entity(), await _entity()
@@ -176,6 +189,7 @@ async def test_a_retracted_link_can_be_attested(
         context_value=simple_api_context,
     )
     assert related.errors is None, f"GraphQL errors: {related.errors}"
+    assert related.data is not None
     link_id = related.data["assertRelationExists"]["link"]["id"]
 
     retracted = await api_schema.execute(
@@ -192,12 +206,15 @@ async def test_a_retracted_link_can_be_attested(
     )
 
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
+    assert attested.data is not None
     assert attested.data["attestLink"]["links"][0]["id"] == link_id
     assert attested.data["attestLink"]["links"][0]["kind"] == "RELATION"
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_cache_agrees_with_the_fold(organization, roi_kind) -> None:
+def test_the_cache_agrees_with_the_fold(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """`CurrentStanding` must say what `claims.stands_for` says.
 
     Nothing asserted this while the cache lived on the log row, which is how the
@@ -243,7 +260,9 @@ def test_the_cache_agrees_with_the_fold(organization, roi_kind) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_a_rebuild_reproduces_the_cache(organization, roi_kind) -> None:
+def test_a_rebuild_reproduces_the_cache(
+    organization: Organization, roi_kind: evidence_models.StructureKind
+) -> None:
     """Drop the projection, replay it, and nothing changes.
 
     The honesty test for `CurrentStanding`, and the reason `rebuild` folds it before
@@ -282,7 +301,7 @@ def test_a_rebuild_reproduces_the_cache(organization, roi_kind) -> None:
 
 
 @pytest.mark.django_db(transaction=True)
-def test_the_standing_cache_is_total(test_graph) -> None:
+def test_the_standing_cache_is_total(test_graph: core_models.Graph) -> None:
     """RFC 0024: the trust-everyone fold caches an instance's standing like any
     claim's. What a view says is still its category's rule."""
     from evidence import claims as claims_module
@@ -324,6 +343,7 @@ async def test_a_retraction_shows_up_as_a_standing(
     )
 
     assert retracted.errors is None, f"GraphQL errors: {retracted.errors}"
+    assert retracted.data is not None
     payload = retracted.data["retractEntity"]
 
     assert [row["stands"] for row in payload["instance"]["standings"]] == [False], (
@@ -337,6 +357,7 @@ async def test_a_retraction_shows_up_as_a_standing(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     assert [row["stands"] for row in read.data["instance"]["standings"]] == [False], (
         "and the same answer is readable afterwards, without the write"
     )
@@ -353,6 +374,7 @@ async def test_a_retraction_shows_up_as_a_standing(
         context_value=simple_api_context,
     )
     assert attested.errors is None, f"GraphQL errors: {attested.errors}"
+    assert attested.data is not None
     claim = attested.data["attestEntity"]["instance"]
 
     assert [row["stands"] for row in claim["standings"]] == [True, False], (
@@ -369,7 +391,7 @@ async def test_retract_metric(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueInput!) {
             assertMetricValue(input: $input) { metric { id } }
@@ -417,7 +439,7 @@ async def test_retracting_a_metric_twice_is_one_position(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     create_mutation = """
         mutation CreateMetric($input: AssertMetricValueInput!) {
             assertMetricValue(input: $input) { metric { id } }
@@ -458,6 +480,7 @@ async def test_retracting_a_metric_twice_is_one_position(
     )
 
     assert archive_result.errors is None, f"GraphQL errors: {archive_result.errors}"
+    assert archive_result.data is not None
     assert archive_result.data["retractMetric"]["metric"]["id"] == metric_id
 
     # Archiving twice is a no-op rather than a second retraction, so the state
@@ -476,7 +499,7 @@ async def test_retract_structure(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     category = await claims.ensure_kind(test_graph)
     object_id = f"obj_{uuid.uuid4().hex[:8]}"
 
@@ -499,6 +522,7 @@ async def test_retract_structure(
     )
 
     assert create_result.errors is None, f"GraphQL errors: {create_result.errors}"
+    assert create_result.data is not None
     structure_id = create_result.data["assertStructureExists"]["structure"]["id"]
 
     # `deleteStructure` is gone: it cascaded away every metric describing the
@@ -517,6 +541,7 @@ async def test_retract_structure(
     )
 
     assert archive_result.errors is None, f"GraphQL errors: {archive_result.errors}"
+    assert archive_result.data is not None
     assert archive_result.data["retractStructure"]["structure"]["id"] == structure_id
 
     # Archiving a structure that is not there reports it rather than succeeding
@@ -538,7 +563,7 @@ async def test_retracting_an_entity_returns_it_from_the_log(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-):
+) -> None:
     """The mutation answers from the evidence, because the vertex is gone.
 
     `archiveEntity` returns `Entity!`, and by the time it returns there is no
@@ -619,7 +644,7 @@ TREATMENT = datetime(2026, 6, 1, tzinfo=UTC)
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_retraction_may_say_when_it_took_effect(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """`at` on a retract input is `Standing.at` — the cell died in June, whenever
     that was recorded."""
@@ -656,7 +681,10 @@ ATTEST_EVENT = {
 @pytest.mark.asyncio
 @pytest.mark.parametrize("protocol", [False, True], ids=["natural", "protocol"])
 async def test_a_retracted_event_can_be_attested(
-    api_schema, simple_api_context, test_graph: core_models.Graph, protocol: bool
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    protocol: bool,
 ) -> None:
     """A3 for events: `attestNaturalEvent` and `attestProtocolEvent` are positions
     like any other. The retraction stays on the record, the attestation is the

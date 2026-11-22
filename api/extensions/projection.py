@@ -10,6 +10,9 @@ speak: this is the one place a second projection kind would be selected.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import Any
+
 from strawberry.extensions import SchemaExtension
 
 from graph_engine.projection import Projector
@@ -30,11 +33,11 @@ __all__ = [
 class ProjectionExtension(SchemaExtension):
     """Strawberry extension that binds one projector per operation."""
 
-    def __init__(self, projector: Projector, *args, **kwargs) -> None:
+    def __init__(self, projector: Projector, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self.projector: Projector = projector
 
-    def on_operation(self):
+    def on_operation(self) -> Iterator[None]:
         """Bind for the operation, then unbind."""
         token = current_projector.set(self.projector)
         yield

@@ -11,7 +11,9 @@ produces the same result, and it can be interrupted without leaving the
 projection in a state that needs manual repair.
 """
 
-from django.core.management.base import BaseCommand, CommandError
+from typing import Any
+
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 from api.extensions.projection import current_or_default
 from core import models
@@ -25,7 +27,7 @@ class Command(BaseCommand):
 
     help = "Backfill derived values for the categories a schema change touched."
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         """Declare the command's arguments."""
         parser.add_argument("--graph", required=True, help="Name or id of the graph.")
         parser.add_argument(
@@ -44,7 +46,7 @@ class Command(BaseCommand):
             help="Report the work set without doing it.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         """Diff two schema versions and re-derive what changed."""
         graph = self._graph(options["graph"])
         before, after = self._versions(graph, options)
@@ -79,7 +81,7 @@ class Command(BaseCommand):
         return _graphs.select_graph(identifier)
 
     def _versions(
-        self, graph: models.Graph, options
+        self, graph: models.Graph, options: dict[str, Any]
     ) -> tuple[models.GraphSchema, models.GraphSchema]:
         schemas = models.GraphSchema.objects.filter(graph=graph).order_by("index")
 

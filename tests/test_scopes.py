@@ -3,10 +3,12 @@ own (the ``@auth`` directive publishes it, a generated client gathers it), and `
 for all of them. What a member may do is what their kraph role says: `kraph_editor` records facts,
 `kraph_curator` changes the vocabulary, `kraph_admin` both."""
 
+import kante
 import pytest
 from arkitekt_service.graphql import scope_gaps
 from kante.context import HttpContext, UniversalRequest
 from strawberry.http.temporal_response import TemporalResponse
+from strawberry.types import ExecutionResult
 
 from tests.support import reads, writes
 
@@ -20,7 +22,7 @@ def _as(token: str) -> HttpContext:
     )
 
 
-def _reason(result) -> str | None:
+def _reason(result: ExecutionResult) -> str | None:
     return result.errors[0].extensions.get("reason") if result.errors else None
 
 
@@ -28,13 +30,17 @@ def _a_term(key: str) -> dict[str, dict[str, str]]:
     return {"input": {"kind": "ENTITY", "key": key}}
 
 
-def test_every_root_field_asks_for_a_scope_kraph_declares(api_schema):
+def test_every_root_field_asks_for_a_scope_kraph_declares(
+    api_schema: kante.Schema,
+) -> None:
     assert scope_gaps(api_schema) == []
 
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_app_granted_reads_reads_and_writes_nothing(api_schema):
+async def test_an_app_granted_reads_reads_and_writes_nothing(
+    api_schema: kante.Schema,
+) -> None:
     read = await api_schema.execute(reads.TERMS, context_value=_as("readertest"))
     assert read.errors is None, read.errors
     refused = await api_schema.execute(
@@ -47,7 +53,7 @@ async def test_an_app_granted_reads_reads_and_writes_nothing(api_schema):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_the_all_scope_writes(api_schema):
+async def test_the_all_scope_writes(api_schema: kante.Schema) -> None:
     made = await api_schema.execute(
         writes.CREATE_TERM,
         variable_values=_a_term("AllScoped"),
@@ -58,7 +64,9 @@ async def test_the_all_scope_writes(api_schema):
 
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
-async def test_an_editor_records_facts_but_curates_no_vocabulary(api_schema):
+async def test_an_editor_records_facts_but_curates_no_vocabulary(
+    api_schema: kante.Schema,
+) -> None:
     asserted = await api_schema.execute(
         writes.ASSERT_ENTITY_EXISTS,
         variable_values={"input": {"term": "EditedIn"}},

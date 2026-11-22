@@ -8,10 +8,13 @@ act (A1). `supersedeMetricValue` cites the metric it replaces.
 
 import uuid
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from authentikate.models import Organization
+from kante.context import HttpContext
 
+from core import models as core_models
 from evidence import models as evidence_models
 from tests.support import claims, writes
 
@@ -87,7 +90,9 @@ RETRACT_LINKS = """
 """
 
 
-async def _metric(api_schema, ctx, value: float = 12.0) -> tuple[str, str]:
+async def _metric(
+    api_schema: kante.Schema, ctx: HttpContext, value: float = 12.0
+) -> tuple[str, str]:
     data = await writes.execute(
         api_schema,
         ctx,
@@ -110,7 +115,9 @@ async def _metric(api_schema, ctx, value: float = 12.0) -> tuple[str, str]:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_claim_cites_the_claims_it_came_from(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The citation is a link, readable from both ends, written under the citing claim's own assertion."""
     metric_id, _ = await _metric(api_schema, simple_api_context)
@@ -154,7 +161,9 @@ async def test_a_claim_cites_the_claims_it_came_from(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_claim_may_cite_several_claims_of_different_shapes(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     metric_id, _ = await _metric(api_schema, simple_api_context)
     a = (
@@ -212,7 +221,9 @@ async def test_a_claim_may_cite_several_claims_of_different_shapes(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_superseding_a_metric_cites_the_one_it_replaces(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The correction and its original were tied only by sharing an assertion id; now the new value says so."""
     old_id, _ = await _metric(api_schema, simple_api_context, 12.0)
@@ -250,7 +261,9 @@ async def test_superseding_a_metric_cites_the_one_it_replaces(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_retracting_a_citation_removes_it_from_both_ends(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     metric_id, _ = await _metric(api_schema, simple_api_context)
     instance = (
@@ -286,7 +299,9 @@ async def test_retracting_a_citation_removes_it_from_both_ends(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_citing_a_claim_that_does_not_exist_is_refused(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """Refused before anything is written: no instance, no assertion."""
     before = await evidence_models.Assertion.all_objects.acount()
@@ -302,7 +317,9 @@ async def test_citing_a_claim_that_does_not_exist_is_refused(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_citing_another_organizations_claim_is_refused(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A ref is a bare uuid, so the citation would otherwise cross the tenant boundary silently."""
 
@@ -331,7 +348,9 @@ async def test_citing_another_organizations_claim_is_refused(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_lineage_is_not_a_connection(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The panel's `connections` enumerates its kinds positively; lineage has fields of its own."""
     metric_id, _ = await _metric(api_schema, simple_api_context)

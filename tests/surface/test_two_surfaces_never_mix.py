@@ -14,6 +14,7 @@ from asgiref.sync import sync_to_async
 from kante.context import HttpContext
 
 from core import models as core_models
+from graph_engine.projection import TableProjector
 from tests.support import drawing, graphs, reads, writes
 
 NODE = """
@@ -31,7 +32,10 @@ RELATION = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_node_names_its_view_its_position_and_its_claim(
-    api_schema, simple_api_context, test_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     entity = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
@@ -41,6 +45,7 @@ async def test_a_node_names_its_view_its_position_and_its_claim(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     node = read.data["node"]
     assert node["graph"]["id"] == str(test_graph.pk)
     assert node["asOfSeq"] == node["graph"]["projection"]["projectedThroughSeq"], (
@@ -59,6 +64,7 @@ async def test_a_node_names_its_view_its_position_and_its_claim(
         context_value=simple_api_context,
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     assert read.data["node"]["categoryIds"] == drawn_categories, (
         "categories come from the rule, not from the cache"
     )
@@ -68,7 +74,9 @@ async def test_a_node_names_its_view_its_position_and_its_claim(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_edge_reached_without_a_view_is_a_claim_with_claim_endpoints(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "Cell")
@@ -78,6 +86,7 @@ async def test_an_edge_reached_without_a_view_is_a_claim_with_claim_endpoints(
         RELATION, variable_values={"id": link}, context_value=simple_api_context
     )
     assert read.errors is None, f"GraphQL errors: {read.errors}"
+    assert read.data is not None
     relation = read.data["relation"]
     assert relation["category"] is None, (
         "no view was named, so no category is borrowed from one"
@@ -124,6 +133,7 @@ async def test_the_top_level_node_carries_no_borrowed_category(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["assertEntityExists"]
 
     assert payload["instance"]["term"]["key"] == "AIS", (
@@ -160,6 +170,7 @@ async def test_node_interface_fields_resolve_for_a_structure(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     payload = result.data["structure"]
     assert payload["id"] == structure_id, (
         "The primary key is the identity — there is no second, global one"
@@ -169,7 +180,9 @@ async def test_node_interface_fields_resolve_for_a_structure(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_drawn_in_names_exactly_the_views_a_node_read_accepts(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """RFC 0025: `Instance.drawnIn` lists the views that draw a claim, and
     `node(id:, graph:)` answers for exactly those — a view that does not draw it

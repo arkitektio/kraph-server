@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 import kante
 import pytest
 from asgiref.sync import sync_to_async
-from kante.context import HttpContext
+from kante.context import HttpContext, UniversalRequest
 
 from core import asserted_terms
 from core import models as core_models
@@ -24,10 +24,12 @@ from evidence import selector as selector_module
 from evidence import writer
 from graph_engine import input_models, projector
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs, namespaces, rules, writes
 from tests.support.graphs import AFTER, BEFORE
 from tests.support.graphs import example_graph as _example_graph
 from tests.support.graphs import rebuild as _rebuild
+from tests.support.identity import owned_by
 
 JOHANNES = "johannes"
 CHRISTIAN = "christian"
@@ -38,7 +40,7 @@ _retract_classifications = claims.retract_classifications
 
 
 def _labels(
-    table_projector, graph: core_models.Graph, keys: list[str]
+    table_projector: TableProjector, graph: core_models.Graph, keys: list[str]
 ) -> dict[str, int]:
     """How many vertices carry each category's label, keyed by category key.
 
@@ -53,7 +55,9 @@ def _labels(
     return counts
 
 
-def _ids_with_label(table_projector, graph: core_models.Graph, key: str) -> list[str]:
+def _ids_with_label(
+    table_projector: TableProjector, graph: core_models.Graph, key: str
+) -> list[str]:
     """The `id` property of every vertex carrying this category's label."""
     category = core_models.Category.objects.get(graph=graph, key=key)
     return drawing.refs_with_label(graph, category.age_name)
@@ -107,7 +111,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """ "In this graph, AIS means the ones Johannes called AIS."
 
@@ -130,7 +134,7 @@ async def test_a_definition_narrows_what_the_graph_contains(
 
         # Each node gets one annotator's claim, and the creating claim is retracted
         # so the two nodes differ only in who says they are an AIS.
-        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN)):
+        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN), strict=True):
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
 
@@ -161,7 +165,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """The whole claim.
 
@@ -182,7 +186,7 @@ async def test_changing_a_definition_moves_membership_and_writes_no_evidence(
                 test_graph.organization
             ).filter(term__in=selector_module.term_ids_for(test_graph))
         )
-        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN)):
+        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN), strict=False):
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
 
@@ -247,7 +251,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """ "Split AIS into AISprox if Johannes called it and AISdistal if Christian did."
 
@@ -266,7 +270,7 @@ async def test_definitions_can_partition_one_term_by_annotator(
                 test_graph.organization
             ).filter(term__in=selector_module.term_ids_for(test_graph))
         )
-        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN)):
+        for node, subject in zip(nodes, (JOHANNES, CHRISTIAN), strict=False):
             _retract_classifications(test_graph, node.ref)
             _claim(test_graph, node.ref, ais, subject)
 
@@ -305,7 +309,7 @@ async def test_a_node_matching_two_definitions_is_drawn_under_both(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """A vertex carries every label that admits it (RFC 0019), so a node both
     definitions admit is drawn once, under both — and under the primitive AIS
@@ -366,7 +370,7 @@ async def test_a_primitive_category_behaves_exactly_as_before(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """A graph that declares no definitions must be unchanged by any of this.
 
@@ -395,7 +399,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """ "Neuron here means anything claimed Pyramidal or Interneuron."
 
@@ -432,7 +436,7 @@ async def test_a_category_can_derive_from_several_words_the_graph_never_declares
         # Claim the two nodes under words this graph declares no category for.
         # Retract the creating AIS claims so nothing but the definition can admit
         # them — otherwise the primitive fallback would carry the test.
-        for node, key in zip(nodes, ("Pyramidal", "Interneuron")):
+        for node, key in zip(nodes, ("Pyramidal", "Interneuron"), strict=True):
             _retract_classifications(test_graph, node.ref)
             term = writer.ensure_term(
                 organization, core_models.EntityCategory.KIND, key
@@ -496,7 +500,7 @@ async def test_a_single_word_definition_still_reads_as_one(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """A WORD condition's value may be one word (IS) or several (IN).
 
@@ -519,7 +523,9 @@ DEC_1 = datetime(2026, 12, 1, tzinfo=UTC)
 DEC_10 = datetime(2026, 12, 10, tzinfo=UTC)
 
 
-async def _five_claims(api_schema, ctx, literal_graph) -> dict[str, str]:
+async def _five_claims(
+    api_schema: kante.Schema, ctx: HttpContext, literal_graph: core_models.Graph
+) -> dict[str, str]:
     """Five entities, one annotator claim each — the shared evidence.
 
     Creation mints the word under the request's own subject (which no clause
@@ -533,7 +539,7 @@ async def _five_claims(api_schema, ctx, literal_graph) -> dict[str, str]:
     c5 = await writes.create_entity(api_schema, ctx, "StemCell")
 
     @sync_to_async
-    def annotate():
+    def annotate() -> None:
         cell = core_models.Category.objects.get(graph=literal_graph, key="Cell")
         stem = core_models.Category.objects.get(graph=literal_graph, key="StemCell")
         claims.classify(literal_graph, c1, cell, PETER)
@@ -547,7 +553,10 @@ async def _five_claims(api_schema, ctx, literal_graph) -> dict[str, str]:
 
 
 def _defined_graph(
-    request, name: str, key: str, definition: input_models.CategoryDefinitionInput
+    request: UniversalRequest,
+    name: str,
+    key: str,
+    definition: input_models.CategoryDefinitionInput,
 ) -> core_models.Graph:
     """One graph whose single category's meaning is declared **in the schema** —
     the definition document carries the predicate (RFC 0007)."""
@@ -561,9 +570,7 @@ def _defined_graph(
             ),
         ),
         None,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name=name,
     )
 
@@ -571,12 +578,18 @@ def _defined_graph(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_category_subsumes_word_annotator_time_clauses(
-    api_schema, simple_api_context, subsumption_graph, literal_graph, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    subsumption_graph: core_models.Graph,
+    literal_graph: core_models.Graph,
+    table_projector: TableProjector,
 ) -> None:
     refs = await _five_claims(api_schema, simple_api_context, literal_graph)
 
     @sync_to_async
-    def views():
+    def views() -> tuple[
+        list[tuple[object, ...]], list[tuple[object, ...]], list[tuple[object, ...]]
+    ]:
         _rebuild(subsumption_graph, table_projector)
         subsumed = namespaces.graph_table(
             subsumption_graph,
@@ -606,12 +619,12 @@ async def test_a_category_subsumes_word_annotator_time_clauses(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_clauses_do_not_cross_multiply(
-    api_schema,
-    simple_api_context,
-    subsumption_graph,
-    literal_graph,
-    table_projector,
-    authenticated_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    subsumption_graph: core_models.Graph,
+    literal_graph: core_models.Graph,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The exact wrong answers the flat form gives, pinned on both sides.
 
@@ -623,7 +636,7 @@ async def test_clauses_do_not_cross_multiply(
     request = authenticated_context.request
 
     @sync_to_async
-    def both_encodings():
+    def both_encodings() -> tuple[set[object], set[object]]:
         _rebuild(subsumption_graph, table_projector)
         subsumed = {
             row[0]
@@ -665,17 +678,17 @@ async def test_clauses_do_not_cross_multiply(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_flat_since_bound_admits_only_later_claims(
-    api_schema,
-    simple_api_context,
-    literal_graph,
-    table_projector,
-    authenticated_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    literal_graph: core_models.Graph,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     refs = await _five_claims(api_schema, simple_api_context, literal_graph)
     request = authenticated_context.request
 
     @sync_to_async
-    def late_stems():
+    def late_stems() -> set[object]:
         graph = _defined_graph(
             request,
             "late-stems",
@@ -713,12 +726,14 @@ ENTITIES = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_an_entity_category_defined_over_an_event_word_admits_no_events(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     event_id = await writes.create_event(api_schema, simple_api_context, "Mitosis")
 
     @sync_to_async
-    def defined_over_mitosis():
+    def defined_over_mitosis() -> tuple[int, set[str], set[tuple[str, str]]]:
         category = core_models.EntityCategory.objects.create(
             graph=test_graph,
             key="MitoticThing",
@@ -750,6 +765,7 @@ async def test_an_entity_category_defined_over_an_event_word_admits_no_events(
         context_value=simple_api_context,
     )
     assert listed.errors is None, f"GraphQL errors: {listed.errors}"
+    assert listed.data is not None
     assert listed.data["entities"] == []
 
 
@@ -759,7 +775,7 @@ async def test_a_view_that_declares_the_word_later_can_pick_the_claim_up(
     api_schema: kante.Schema,
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """Org-scoped write, then materialization — the whole point of the change.
 
@@ -823,7 +839,7 @@ async def test_a_new_graph_can_be_a_view_over_history(
     simple_api_context: HttpContext,
     test_graph: core_models.Graph,
     bio_graph_schema: input_models.GraphDefinitionInput,
-    table_projector,
+    table_projector: TableProjector,
 ) -> None:
     """A graph materialized after the claim holds it.
 
@@ -839,11 +855,7 @@ async def test_a_new_graph_can_be_a_view_over_history(
         from graph_engine.materialize import materialize
 
         request = simple_api_context.request
-        common = dict(
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
-        )
+        common = owned_by(request)
         quiet = materialize(
             bio_graph_schema,
             table_projector,
@@ -874,7 +886,9 @@ async def test_a_new_graph_can_be_a_view_over_history(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_classification_admits_per_clause(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """Peter's word before Dec 5 and Karl's word after — nothing else."""
     graph_id = await _example_graph(
@@ -882,7 +896,7 @@ async def test_classification_admits_per_clause(
     )
 
     @sync_to_async
-    def build_and_read():
+    def build_and_read() -> tuple[dict[str, int], str, str, str, str, str]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         org = graph.organization
         drawn = claims.mint(org, "AIS", "peter", asserted_at=BEFORE)
@@ -918,7 +932,9 @@ async def test_classification_admits_per_clause(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_correction_across_two_derived_words_keeps_the_node(
-    api_schema, simple_api_context, table_projector
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    table_projector: TableProjector,
 ) -> None:
     """A category defined over two words admits a node through either. A node
     claimed under one, then classified under the other, is one vertex; retracting
@@ -952,7 +968,7 @@ async def test_a_correction_across_two_derived_words_keeps_the_node(
         )
 
     @sync_to_async
-    def drawn():
+    def drawn() -> tuple[int, set[str]]:
         graph = core_models.Graph.objects.get(pk=graph_id)
         return drawing.vertex_count(graph, "Neuron"), drawing.labels_of(graph, node)
 

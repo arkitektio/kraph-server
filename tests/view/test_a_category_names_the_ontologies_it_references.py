@@ -17,7 +17,9 @@ refusing an unknown one, and replaces the reference set whole; both are choices
 this module is here to pin, since there was no prior behaviour to preserve.
 """
 
+import kante
 import pytest
+from kante.context import HttpContext
 
 from core import models as core_models
 from tests.support import graphs
@@ -38,7 +40,7 @@ CREATE_NATURAL_EVENT = """
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_category_stores_the_ontology_references_it_was_given(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     graph_id = await graphs.graph_declaring(
         api_schema, simple_api_context, "Cell", name="ontology-refs"
@@ -62,6 +64,7 @@ async def test_a_category_stores_the_ontology_references_it_was_given(
     )
     assert made.errors is None, f"GraphQL errors: {made.errors}"
 
+    assert made.data is not None
     category_id = made.data["createEntityCategory"]["id"]
     stored = [
         reference
@@ -83,7 +86,7 @@ async def test_a_category_stores_the_ontology_references_it_was_given(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_declaring_a_category_again_replaces_its_references(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """The reference set is replaced whole, not merged.
 
@@ -135,6 +138,7 @@ async def test_declaring_a_category_again_replaces_its_references(
     )
     assert second.errors is None, f"GraphQL errors: {second.errors}"
 
+    assert second.data is not None
     category_id = second.data["createEntityCategory"]["id"]
     stored = [
         reference.name
@@ -150,7 +154,7 @@ async def test_declaring_a_category_again_replaces_its_references(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_every_category_family_records_its_references_the_same_way(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """An entity category and an event category store a reference alike.
 
@@ -196,6 +200,8 @@ async def test_every_category_family_records_its_references_the_same_way(
     )
     assert event.errors is None, f"GraphQL errors: {event.errors}"
 
+    assert entity.data is not None
+    assert event.data is not None
     for category_id in (
         entity.data["createEntityCategory"]["id"],
         event.data["createNaturalEventCategory"]["id"],

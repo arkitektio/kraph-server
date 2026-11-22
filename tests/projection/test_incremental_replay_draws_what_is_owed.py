@@ -7,21 +7,26 @@ exactly the rows it read, and draws what a full rebuild would.
 """
 
 from io import StringIO
+from typing import NoReturn
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
 from django.core.management import call_command
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
+from evidence.values import JSONValue
 from graph_engine import models as projection_models
 from graph_engine import projector, watermark
 from graph_engine.controller import GraphController
+from graph_engine.projection import TableProjector
 from tests.support import drawing, reads, writes
 from tests.support.writes import ASSERT_SAME
 
 
-def _down(*args, **kwargs):
+def _down(*args: object, **kwargs: object) -> NoReturn:
     raise RuntimeError("projector down")
 
 
@@ -34,11 +39,11 @@ def _replay(organization: str) -> str:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_draws_a_node_the_write_path_could_not(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(projector, "reproject_refs", _down)
     failed = await api_schema.execute(
@@ -69,7 +74,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(
     monkeypatch.undo()
 
     @sync_to_async
-    def before():
+    def before() -> tuple[str, int, int, watermark.Position]:
         organization = test_graph.organization
         node = evidence_models.Instance.objects.for_organization(organization).latest(
             "created_at"
@@ -85,7 +90,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(
     assert pending == 1 and drawn == 0 and position.lag >= 1
 
     @sync_to_async
-    def replay():
+    def replay() -> tuple[str, int, int, watermark.Position]:
         output = _replay(test_graph.organization.identifier)
         return (
             output,
@@ -106,6 +111,7 @@ async def test_replay_draws_a_node_the_write_path_could_not(
         context_value=simple_api_context,
     )
     assert properties.errors is None, f"GraphQL errors: {properties.errors}"
+    assert properties.data is not None
     assert properties.data["node"]["properties"].get("avg_length") == pytest.approx(
         30.0
     ), "derived properties come with the node"
@@ -114,11 +120,11 @@ async def test_replay_draws_a_node_the_write_path_could_not(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_removes_a_node_whose_retraction_was_not_drawn(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     entity_id = await writes.create_entity(api_schema, simple_api_context, "AIS")
 
@@ -134,7 +140,7 @@ async def test_replay_removes_a_node_whose_retraction_was_not_drawn(
     monkeypatch.undo()
 
     @sync_to_async
-    def replay():
+    def replay() -> tuple[int, int]:
         assert drawing.vertices_with_ref(test_graph, entity_id) == 1, (
             "the failed unproject left the vertex"
         )
@@ -151,11 +157,11 @@ async def test_replay_removes_a_node_whose_retraction_was_not_drawn(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_draws_an_edge_whose_write_did_not_reach_age(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     a = await writes.create_entity(api_schema, simple_api_context, "AIS")
     b = await writes.create_entity(api_schema, simple_api_context, "AIS")
@@ -179,7 +185,7 @@ async def test_replay_draws_an_edge_whose_write_did_not_reach_age(
     monkeypatch.undo()
 
     @sync_to_async
-    def replay():
+    def replay() -> tuple[int, int]:
         _replay(test_graph.organization.identifier)
         return drawing.edges_between(
             test_graph, a, b, "IS_CONNECTED_TO"
@@ -193,11 +199,11 @@ async def test_replay_draws_an_edge_whose_write_did_not_reach_age(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_equals_a_full_rebuild(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The acceptance test: after an incremental replay, a full rebuild changes nothing."""
     a = await writes.create_entity(
@@ -246,7 +252,9 @@ async def test_replay_equals_a_full_rebuild(
     monkeypatch.undo()
 
     @sync_to_async
-    def replay_then_rebuild():
+    def replay_then_rebuild() -> tuple[
+        dict[str, dict[str, JSONValue]], dict[str, dict[str, JSONValue]]
+    ]:
         organization = test_graph.organization
         assert watermark.pending_count(organization) == 2
         _replay(organization.identifier)
@@ -268,7 +276,7 @@ async def test_replay_equals_a_full_rebuild(
 
 @pytest.mark.django_db(transaction=True)
 def test_replay_tolerates_an_assertion_with_no_claims(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     """An act with no claims — one `redact` emptied, or one an older writer split
     across two transactions — leaves an outbox row with nothing to draw. A live
@@ -294,7 +302,7 @@ def test_replay_tolerates_an_assertion_with_no_claims(
 
 @pytest.mark.django_db(transaction=True)
 def test_incremental_refuses_a_single_graph(
-    test_graph: core_models.Graph, table_projector
+    test_graph: core_models.Graph, table_projector: TableProjector
 ) -> None:
     from django.core.management.base import CommandError
 
@@ -307,11 +315,11 @@ def test_incremental_refuses_a_single_graph(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_replay_folds_a_merge_the_write_path_could_not_draw(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    table_projector,
-    monkeypatch,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The incremental path widens the touched set to the whole component."""
     a = await writes.create_entity(
@@ -321,7 +329,7 @@ async def test_replay_folds_a_merge_the_write_path_could_not_draw(
         api_schema, simple_api_context, "AIS", evidence=writes.roi("roi-b", 30.0)
     )
 
-    def _down(*args, **kwargs):
+    def _down(*args: object, **kwargs: object) -> NoReturn:
         raise RuntimeError("projector down")
 
     monkeypatch.setattr(projector, "reproject_refs", _down)
@@ -336,7 +344,7 @@ async def test_replay_folds_a_merge_the_write_path_could_not_draw(
     monkeypatch.undo()
 
     @sync_to_async
-    def replay():
+    def replay() -> tuple[int, list[str], JSONValue, int]:
         assert drawing.vertex_count(test_graph, "AIS") == 2, (
             "the failed draw left the two observations apart"
         )

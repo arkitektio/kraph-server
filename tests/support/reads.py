@@ -6,6 +6,12 @@ The view surface (`node(id:, graph:)`) and the log surface (`instance(id:)`,
 
 from typing import Any
 
+import kante
+from kante.context import HttpContext
+
+from core import models as core_models
+from evidence.values import JSONValue
+from graph_engine.retrieved import RetrievedNode
 from tests.support.writes import execute
 
 NODE = """
@@ -28,7 +34,10 @@ STANDINGS = """
 
 
 async def node_properties(
-    api_schema: Any, ctx: Any, graph: Any, ref: str
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph | int | str,
+    ref: str,
 ) -> dict[str, Any]:
     """The derived properties a view draws for one individual — `{}` when it draws none."""
     data = await execute(
@@ -41,7 +50,7 @@ async def node_properties(
 
 
 async def standings_of(
-    api_schema: Any, ctx: Any, claim_id: str
+    api_schema: kante.Schema, ctx: HttpContext, claim_id: str
 ) -> list[dict[str, Any]]:
     """Every position taken on one claim, newest first."""
     return list(
@@ -160,10 +169,8 @@ INPUT_PARTICIPATIONS = """
 """
 
 
-def retrieved_node(properties: dict[str, Any]) -> Any:
+def retrieved_node(properties: dict[str, Any]) -> RetrievedNode:
     """A drawn record with these properties and nothing else — for the read-side filters."""
-    from graph_engine.retrieved import RetrievedNode
-
     return RetrievedNode(
         controller=None,
         graph_name="testgraph",
@@ -173,7 +180,13 @@ def retrieved_node(properties: dict[str, Any]) -> Any:
     )  # type: ignore[arg-type]
 
 
-async def property_of(api_schema: Any, ctx: Any, graph: Any, ref: str, key: str) -> Any:
+async def property_of(
+    api_schema: kante.Schema,
+    ctx: HttpContext,
+    graph: core_models.Graph | int | str,
+    ref: str,
+    key: str,
+) -> JSONValue:
     """One derived property a view draws for an individual — None when it draws none."""
     return (await node_properties(api_schema, ctx, graph, ref)).get(key)
 

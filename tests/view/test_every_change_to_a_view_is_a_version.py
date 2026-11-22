@@ -9,9 +9,12 @@ everything".
 """
 
 import json
+from typing import NoReturn
 
+import kante
 import pytest
 from asgiref.sync import sync_to_async
+from kante.context import HttpContext
 
 from core import models as core_models
 from evidence import models as evidence_models
@@ -239,7 +242,9 @@ def test_a_save_through_the_base_class_emits_a_version(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_changing_the_sameness_rule_is_a_version(
-    api_schema, simple_api_context, test_graph: core_models.Graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """RFC 0024: whose sameness claims a view counts is part of what the view
     means, so changing it records a version that carries the rule."""
@@ -260,7 +265,7 @@ async def test_changing_the_sameness_rule_is_a_version(
     )
 
     @sync_to_async
-    def newest():
+    def newest() -> tuple[int, core_models.GraphSchema | None]:
         schemas = core_models.GraphSchema.objects.filter(graph=test_graph).order_by(
             "-index"
         )
@@ -318,10 +323,10 @@ def _inert_mutations(graph: core_models.Graph) -> list[tuple[str, str, dict]]:
     ids=["archiveGraph", "pin", "updateGraphVisual", "updateTerm"],
 )
 async def test_product_state_emits_no_version_and_runs_no_ddl(
-    api_schema,
-    simple_api_context,
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
     test_graph: core_models.Graph,
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
     which: int,
 ) -> None:
     """C7: archiving, pinning, layout and a word's presentation are not part of
@@ -329,7 +334,7 @@ async def test_product_state_emits_no_version_and_runs_no_ddl(
     namespace."""
     from graph_engine.projection import table as table_module
 
-    def refuse(*args, **kwargs):
+    def refuse(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("product state must not touch the namespace")
 
     monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)

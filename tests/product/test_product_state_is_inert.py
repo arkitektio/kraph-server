@@ -8,6 +8,8 @@ History: eleven `archive*` mutations set an attribute that was a field on no
 model; Python took it, `save()` persisted nothing, and the caller got a success.
 """
 
+from typing import NoReturn
+
 import kante
 import pytest
 from asgiref.sync import sync_to_async
@@ -15,6 +17,7 @@ from kante.context import HttpContext
 
 from core import models as core_models
 from core.models import Graph
+from graph_engine.projection import TableProjector
 from tests.support import writes
 
 UPDATE_GRAPH = """
@@ -43,6 +46,7 @@ async def test_archiving_a_graph_persists(
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["archiveGraph"]["isArchived"] is True
 
     reloaded = await core_models.Graph.objects.aget(pk=test_graph.pk)
@@ -76,6 +80,7 @@ async def test_archiving_is_reversible(
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["updateGraph"]["isArchived"] is False
 
     reloaded = await core_models.Graph.objects.aget(pk=test_graph.pk)
@@ -108,6 +113,7 @@ async def test_an_archived_graph_is_still_reachable_by_id(
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["graph"]["isArchived"] is True
 
 
@@ -164,6 +170,7 @@ async def test_archiving_a_saved_query_persists(
         context_value=authenticated_context,
     )
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data[mutation]["archived"] is True, (
         f"{mutation} must report the state it just set"
     )
@@ -199,7 +206,11 @@ def test_deleting_an_image_does_not_delete_the_view(test_graph: Graph) -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_moving_a_box_runs_no_ddl(
-    api_schema, simple_api_context, test_graph, table_projector, monkeypatch
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    table_projector: TableProjector,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Layout is presentation. `updateGraphVisual` used to `save()` each category,
     and the category-write signal then dropped and recreated the graph's whole
@@ -208,7 +219,7 @@ async def test_moving_a_box_runs_no_ddl(
 
     from graph_engine.projection import table as table_module
 
-    def refuse(*args, **kwargs):
+    def refuse(*args: object, **kwargs: object) -> NoReturn:
         raise AssertionError("a layout change must not touch the namespace")
 
     monkeypatch.setattr(table_module.TableProjector, "refresh_namespace", refuse)
@@ -237,7 +248,9 @@ async def test_moving_a_box_runs_no_ddl(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_a_malformed_colour_is_refused_with_a_message(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """A colour is three or four integers in [0, 255]; anything else is refused by name, not by `assert`.
 

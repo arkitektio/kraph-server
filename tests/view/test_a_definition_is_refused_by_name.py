@@ -9,12 +9,16 @@ stored it, so a client got a valid schema and a permanently empty property;
 the suite's own fixture shipped one.
 """
 
+import kante
 import pytest
+from kante.context import HttpContext
 from pydantic import ValidationError
 
 from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import materialize
+from graph_engine.projection import TableProjector
+from tests.support.identity import owned_by
 from tests.support.writes import CREATE_GRAPH
 
 RULE = models.DerivationRuleInput(
@@ -81,7 +85,9 @@ def _schema(extensions: models.GraphExtensionsInput) -> models.GraphDefinitionIn
     ],
 )
 def test_a_schema_declaring_edge_properties_is_refused(
-    extensions, table_projector, authenticated_context
+    extensions: models.GraphExtensionsInput,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """Refused before any category exists, naming the fix.
 
@@ -95,15 +101,15 @@ def test_a_schema_declaring_edge_properties_is_refused(
         materialize(
             _schema(extensions),
             table_projector,
-            user=request._user,
-            organization=request._organization,
-            membership=request.membership,
+            **owned_by(request),
             name="edge_property_graph",
         )
 
 
 @pytest.mark.django_db(transaction=True)
-def test_events_keep_their_properties(table_projector, authenticated_context) -> None:
+def test_events_keep_their_properties(
+    table_projector: TableProjector, authenticated_context: HttpContext
+) -> None:
     """The guard has to distinguish edges from nodes, and an event is a node.
 
     `NaturalEventCategory` and `ProtocolEventCategory` are `NodeCategory`
@@ -155,9 +161,7 @@ def test_events_keep_their_properties(table_projector, authenticated_context) ->
             )
         ),
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name="event_property_graph",
     )
 
@@ -170,7 +174,9 @@ def test_events_keep_their_properties(table_projector, authenticated_context) ->
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_single_category_mutation_refuses_it_too(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The path that bypasses `validate_derivation_rules` entirely.
 
@@ -222,7 +228,9 @@ async def test_the_single_category_mutation_refuses_it_too(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_creating_a_relation_category_without_properties_works(
-    api_schema, simple_api_context, test_graph
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
 ) -> None:
     """The mutation had never worked at all, so the refusal needs a control.
 
@@ -241,6 +249,7 @@ async def test_creating_a_relation_category_without_properties_works(
     )
 
     assert result.errors is None, f"GraphQL errors: {result.errors}"
+    assert result.data is not None
     assert result.data["createRelationCategory"]["id"]
 
 
@@ -270,7 +279,7 @@ def test_validation_logic_works() -> None:
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_create_graph_refuses_a_view_level_trust_input(
-    api_schema, simple_api_context
+    api_schema: kante.Schema, simple_api_context: HttpContext
 ) -> None:
     """A view-level trust input is refused by name: trust lives in the definition (RFC 0009)."""
     made = await api_schema.execute(
@@ -279,9 +288,9 @@ async def test_create_graph_refuses_a_view_level_trust_input(
             "input": {
                 "name": "no-selectors",
                 "definition": {"extensions": {"entities": [{"key": "X"}]}},
-                "selector": {"assertionFilter": {"subjects": ["peter"]}},
+                "selector": {"assertionFilter": {"subjects": ["peter"]}},  # retired
             }
-        },  # retired
+        },
         context_value=simple_api_context,
     )
     assert made.errors is not None, (

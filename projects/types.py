@@ -6,12 +6,12 @@ imports none of them.
 """
 
 from datetime import datetime
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any, TypeVar
 
 import kante
 import strawberry
 import strawberry_django
-from django.db.models import Q
+from django.db.models import Q, QuerySet
 from strawberry import auto
 
 from api.context import get_active_organization
@@ -20,11 +20,19 @@ from projects import models
 if TYPE_CHECKING:
     from todos.types import TodoList
 
+#: A GraphQL type class, handed through `_fenced` unchanged.
+TypeClass = TypeVar("TypeClass", bound=type)
 
-def _fenced(cls):
+
+def _fenced(cls: TypeClass) -> TypeClass:
     """Scope the type's rows to the active organization (root lists, nested prefetches and pk lookups)."""
 
-    def get_queryset(cls_, queryset, info, **kwargs):
+    def get_queryset(
+        cls_: type,
+        queryset: QuerySet[models.Project],
+        info: kante.Info,
+        **kwargs: Any,
+    ) -> QuerySet[models.Project]:
         return queryset.filter(organization=get_active_organization(info))
 
     cls.get_queryset = classmethod(get_queryset)

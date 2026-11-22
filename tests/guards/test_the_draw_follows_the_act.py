@@ -14,6 +14,7 @@ said the act happened, and nothing recorded why.
 
 import ast
 import pathlib
+from collections.abc import Iterator
 
 CONTROLLER = (
     pathlib.Path(__file__).resolve().parents[2] / "graph_engine" / "controller.py"
@@ -32,7 +33,7 @@ DRAW_NAMES = {
 DRAW_PREFIXES = ("_reproject_", "project_")
 
 
-def _calls(node: ast.AST):
+def _calls(node: ast.AST) -> Iterator[ast.Call]:
     for sub in ast.walk(node):
         if isinstance(sub, ast.Call):
             yield sub

@@ -21,6 +21,7 @@ from kante.context import HttpContext
 from evidence import claims as claims_module
 from evidence import metric_batch, writer
 from evidence import models as evidence_models
+from evidence.values import JSONValue
 from tests.support import writes
 
 TABLE = "@mikro/tabledataset"
@@ -31,7 +32,7 @@ def stated(
     identifier: str = ROI,
     object: str = "1",
     key: str = "area",
-    value: Any = 4555.0,
+    value: JSONValue = 4555.0,
     value_kind: str = "FLOAT",
     **extra: Any,
 ) -> dict[str, Any]:

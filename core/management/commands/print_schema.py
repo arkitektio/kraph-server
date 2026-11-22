@@ -12,9 +12,10 @@ needs no database.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from django.conf import settings
-from django.core.management.base import BaseCommand, CommandError
+from django.core.management.base import BaseCommand, CommandError, CommandParser
 
 SNAPSHOT = "test.graphql"
 
@@ -33,14 +34,14 @@ class Command(BaseCommand):
     help = "Print the GraphQL SDL (or --check that test.graphql matches it)."
     requires_system_checks: list = []
 
-    def add_arguments(self, parser) -> None:
+    def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument(
             "--check",
             action="store_true",
             help=f"Exit 1 when {SNAPSHOT} differs from the live schema.",
         )
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         sdl = render_sdl()
         if options["check"]:
             path = snapshot_path()

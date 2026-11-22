@@ -8,6 +8,8 @@ Rebuilding one through the builder (`createGraphTableQueryThroughBuilder`, or
 `updateGraphTableQuery(input: {plan: …})`) is the fix; this command says which.
 """
 
+from typing import Any
+
 from django.core.management.base import BaseCommand
 
 from core import models
@@ -18,7 +20,7 @@ class Command(BaseCommand):
 
     help = "List saved table queries that still store raw Cypher and have no plan."
 
-    def handle(self, *args, **options) -> None:
+    def handle(self, *args: Any, **options: Any) -> None:
         legacy = list(
             models.GraphTableQuery.objects.filter(plan__isnull=True)
             .select_related("graph")

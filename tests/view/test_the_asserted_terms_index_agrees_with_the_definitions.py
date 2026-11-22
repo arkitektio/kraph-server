@@ -6,8 +6,11 @@ second, normalized; it agrees with the definitions whether maintained
 incrementally or rebuilt, and the reads use it.
 """
 
+from collections.abc import Iterable
+
 import pytest
-from authentikate.models import Organization
+from authentikate.models import Organization, User
+from pytest_django.fixtures import DjangoAssertNumQueries
 
 from core import asserted_terms
 from core import models as core_models
@@ -17,7 +20,7 @@ from tests.support import rules
 
 
 def _defined(
-    graph: core_models.Graph, key: str, asserted_as
+    graph: core_models.Graph, key: str, asserted_as: str | Iterable[str]
 ) -> core_models.EntityCategory:
     """An entity category defined over claims rather than declared primitively."""
     words = [asserted_as] if isinstance(asserted_as, str) else list(asserted_as)
@@ -277,10 +280,10 @@ def test_a_write_lands_in_the_graph_that_only_derives_from_the_word(
 @pytest.mark.django_db(transaction=True)
 def test_deciding_where_a_write_lands_does_not_scale_with_the_ontology(
     organization: Organization,
-    user,
+    user: User,
     graph_a: core_models.Graph,
     assertion: evidence_models.Assertion,
-    django_assert_num_queries,
+    django_assert_num_queries: DjangoAssertNumQueries,
 ) -> None:
     """The measured problem this table was built for.
 

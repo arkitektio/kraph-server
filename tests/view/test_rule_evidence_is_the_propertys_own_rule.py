@@ -8,13 +8,16 @@ category folds everything.
 from datetime import UTC, datetime
 
 import pytest
+from kante.context import HttpContext
 from pydantic import ValidationError
 
 from core import models as core_models
 from graph_engine import input_models as models
 from graph_engine.materialize import compute_definition_hash, materialize
+from graph_engine.projection import TableProjector
 from tests.support import claims, drawing, graphs
 from tests.support import rules as R
+from tests.support.identity import owned_by
 
 SUMMER_START = datetime(2026, 6, 1, tzinfo=UTC)
 SUMMER_END = datetime(2026, 8, 31, tzinfo=UTC)
@@ -53,29 +56,29 @@ def _definition(
 
 def _graph(
     definition: models.GraphDefinitionInput,
-    table_projector,
-    authenticated_context,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
     name: str,
 ) -> core_models.Graph:
     request = authenticated_context.request
     return materialize(
         definition,
         table_projector,
-        user=request._user,
-        organization=request._organization,
-        membership=request.membership,
+        **owned_by(request),
         name=name,
     )
 
 
-def _fold(graph: core_models.Graph, table_projector, ref: str) -> dict:
+def _fold(graph: core_models.Graph, table_projector: TableProjector, ref: str) -> dict:
     graphs.rebuild(graph, table_projector)
     return drawing.vertex_properties(graph, ref)
 
 
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_applies_on_an_unscoped_category(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The gating fix: a primitive category, and the rule's filter still narrows."""
     graph = _graph(
@@ -121,7 +124,9 @@ def test_rule_evidence_applies_on_an_unscoped_category(
 
 @pytest.mark.django_db(transaction=True)
 def test_category_clauses_are_the_default_metric_rule(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """No `rule.evidence` → the category's clauses scope the metrics' assertions."""
     category_definition = models.CategoryDefinitionInput.model_validate(
@@ -161,7 +166,9 @@ def test_category_clauses_are_the_default_metric_rule(
 
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_replaces_the_default(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """With `rule.evidence` present, it is the metric rule — the clauses do not
     also constrain the rows (classification annotators rarely produce metrics)."""
@@ -207,7 +214,9 @@ def test_rule_evidence_replaces_the_default(
 
 @pytest.mark.django_db(transaction=True)
 def test_observed_window_narrows_observed_at(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     graph = _graph(
         _definition(
@@ -247,7 +256,9 @@ def test_observed_window_narrows_observed_at(
 
 @pytest.mark.django_db(transaction=True)
 def test_priority_latest_cannot_be_won_by_an_excluded_source(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     definition = models.GraphDefinitionInput(
         system_version="1.0.0",
@@ -310,7 +321,9 @@ def test_a_rule_evidence_change_moves_the_definition_hash() -> None:
 
 @pytest.mark.django_db(transaction=True)
 def test_a_measurement_only_rule_is_the_category_default_metric_scope(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """RFC 0011: a `KIND IS MEASUREMENT` rule scopes the fold for every property
     without its own `rule.evidence` — and may bound observation time.
@@ -377,7 +390,9 @@ def test_a_measurement_only_rule_is_the_category_default_metric_scope(
 
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_rules_union(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """ "segmenter-v3, or segmenter-v2 measured before June" — two rules, any admits."""
     evidence = R.evidence(
@@ -430,7 +445,9 @@ def test_rule_evidence_rules_union(
 
 @pytest.mark.django_db(transaction=True)
 def test_rule_evidence_unless_subtracts(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     evidence = R.evidence(R.rule(R.not_by("bot"), unless=[[R.via("old-pipeline")]]))
     graph = _graph(
@@ -476,7 +493,9 @@ def test_rule_evidence_unless_subtracts(
 
 @pytest.mark.django_db(transaction=True)
 def test_key_in_rule_evidence(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The property reads `vector_length`; the evidence says app B counts only
     for `area`, so B's vector_length never folds while A's does."""
@@ -515,7 +534,9 @@ def test_key_in_rule_evidence(
 
 @pytest.mark.django_db(transaction=True)
 def test_key_in_a_measurement_only_category_rule(
-    transactional_db, table_projector, authenticated_context
+    transactional_db: None,
+    table_projector: TableProjector,
+    authenticated_context: HttpContext,
 ) -> None:
     """The category default: app A for vector_length, app B for area. Two
     properties without their own evidence, each folds only its app."""

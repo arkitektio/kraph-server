@@ -14,13 +14,13 @@ from api.schema import schema
 SNAPSHOT = pathlib.Path(__file__).resolve().parents[2] / "test.graphql"
 
 
-def test_print_schema():
+def test_print_schema() -> None:
     sdl = str(schema)
     print(sdl)  # visible with `pytest -s`
     assert sdl.strip(), "Schema SDL should not be empty"
 
 
-def test_the_committed_sdl_is_the_live_schema():
+def test_the_committed_sdl_is_the_live_schema() -> None:
     """`test.graphql` is the schema, not a hand dump.
 
     It is the one artifact that shows a breaking change whole, so a schema change
@@ -37,7 +37,7 @@ def test_the_committed_sdl_is_the_live_schema():
     )
 
 
-def test_every_castable_subtype_is_registered_in_the_schema():
+def test_every_castable_subtype_is_registered_in_the_schema() -> None:
     """A type the cast can produce must exist in the schema, or the query fails at runtime.
 
     `cast_edge_to_graphql_type` and `cast_node_to_graphql_type` dispatch onto the
@@ -62,7 +62,7 @@ def test_every_castable_subtype_is_registered_in_the_schema():
             )
 
 
-def test_the_grain_split_is_visible_in_the_sdl():
+def test_the_grain_split_is_visible_in_the_sdl() -> None:
     """Claim types stay off the projection interface, and the edge shape is honest.
 
     Each line here pins one half of a conflation the SDL used to carry:
@@ -103,7 +103,7 @@ def test_the_grain_split_is_visible_in_the_sdl():
         )
 
 
-def test_every_write_payload_implements_the_asserted_interface():
+def test_every_write_payload_implements_the_asserted_interface() -> None:
     """A write payload is reachable by name, and says so in the schema.
 
     `Asserted` carries the two questions every write answers the same way —

@@ -362,7 +362,10 @@ async def test_a_claim_cannot_reach_into_another_organization(
 @pytest.mark.django_db(transaction=True)
 @pytest.mark.asyncio
 async def test_the_log_is_tenant_scoped(
-    api_schema, simple_api_context, test_graph, other_organization
+    api_schema: kante.Schema,
+    simple_api_context: HttpContext,
+    test_graph: core_models.Graph,
+    other_organization: Organization,
 ) -> None:  # noqa: F811
     foreign = await sync_to_async(writer.create_assertion)(
         other_organization, subject="1", app_id="test"

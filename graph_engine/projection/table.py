@@ -38,6 +38,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Iterable, Mapping, Sequence
+from types import ModuleType
 from typing import TYPE_CHECKING
 
 from django.db import connection, transaction
@@ -116,7 +117,7 @@ class TableProjector:
     # ------------------------------------------------------------------ tables
 
     @property
-    def _models(self):
+    def _models(self) -> ModuleType:
         # Imported lazily so this module can be imported before Django apps load
         # (`api/schema.py` builds a projector at import time).
         from graph_engine import models
@@ -568,7 +569,7 @@ class TableProjector:
                 ref,
                 kind,
                 self._as_dict(properties),
-                zip(labels or (), category_pks or ()),
+                zip(labels or (), category_pks or (), strict=True),
                 members or (),
             )
             for pk, ref, kind, properties, labels, category_pks, members in rows
@@ -605,7 +606,10 @@ class TableProjector:
             # driver with an *identity* json loader — so a cell arrives as JSON
             # text (a stored string keeps its quotes) and one decode is exact.
             return [
-                {column: self._from_jsonb(value) for column, value in zip(columns, row)}
+                {
+                    column: self._from_jsonb(value)
+                    for column, value in zip(columns, row, strict=True)
+                }
                 for row in cursor.fetchall()
             ]
 

@@ -9,14 +9,15 @@ ISO strings, which every context accepts.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+
+from evidence.values import JSONValue
 
 
-def _iso(value: Any) -> Any:
+def _iso(value: JSONValue | datetime) -> JSONValue:
     return value.isoformat() if isinstance(value, datetime) else value
 
 
-def condition(field: str, operator: str, value: Any) -> dict:
+def condition(field: str, operator: str, value: JSONValue | datetime) -> dict:
     return {"field": field, "operator": operator, "value": _iso(value)}
 
 
@@ -56,20 +57,20 @@ def by_action(*names: str) -> dict:
     )
 
 
-def before(moment: Any) -> dict:
+def before(moment: datetime | str) -> dict:
     return condition("ASSERTED_AT", "BEFORE", moment)
 
 
-def since(moment: Any) -> dict:
+def since(moment: datetime | str) -> dict:
     return condition("ASSERTED_AT", "SINCE", moment)
 
 
-def observed_before(moment: Any) -> dict:
+def observed_before(moment: datetime | str) -> dict:
     """World time — the claim's `observed_at` (RFC 0015), any kind."""
     return condition("OBSERVED_AT", "BEFORE", moment)
 
 
-def observed_since(moment: Any) -> dict:
+def observed_since(moment: datetime | str) -> dict:
     return condition("OBSERVED_AT", "SINCE", moment)
 
 
