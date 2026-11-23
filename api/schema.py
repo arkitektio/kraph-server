@@ -6,6 +6,7 @@ mutations.
 """
 
 from collections.abc import Callable
+from functools import partial
 from typing import Any
 
 import kante
@@ -17,7 +18,7 @@ from arkitekt_service.graphql import TelemetryExtension
 from authentikate.catch_alls import declare_catch_alls
 from authentikate.strawberry.directives import AuthExtension
 from authentikate.strawberry.extension import AuthentikateExtension
-from strawberry.extensions import QueryDepthLimiter
+from strawberry.extensions import QueryDepthLimiter, SchemaExtension
 from strawberry.schema.config import StrawberryConfig
 
 from api import mutations, queries, types
@@ -1014,17 +1015,22 @@ def create_schema(
     Returns:
         Configured Kante schema
     """
-    extensions = [
-        TelemetryExtension(),
-        QueryDepthLimiter(max_depth=max_depth),
-        AuthentikateExtension(),
+    # Classes and zero-argument factories, never instances: strawberry hands an
+    # instance to every request and sets its `execution_context` on each one, so
+    # concurrent operations overwrite each other's. A burst of queries (a cold
+    # page load) then had AuthentikateExtension.on_validate read a sibling's
+    # unparsed context: "No GraphQL document available".
+    extensions: list[Callable[[], SchemaExtension]] = [
+        TelemetryExtension,
+        partial(QueryDepthLimiter, max_depth=max_depth),
+        AuthentikateExtension,
         # Loaders are per-operation. Left as module-level instances they became a
         # process-lifetime cache shared across every tenant.
-        LoaderExtension(),
+        LoaderExtension,
     ]
 
     if projector is not None:
-        extensions.append(ProjectionExtension(projector=projector))
+        extensions.append(partial(ProjectionExtension, projector=projector))
 
     # `kraph_all` passes every scope check here and `kraph_admin` every role check (authentikate's
     # catch-alls). kraph serves no hosted structures, so this is all `annotate_schema` would do.
