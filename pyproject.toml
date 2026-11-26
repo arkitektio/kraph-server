@@ -32,7 +32,7 @@ dependencies = [
     "pyjwt>=2.12.1",
     "whitenoise>=6.6",
     "arkitekt-service[telemetry]>=9.6.0",
-    "arkitekt-datalayer>=3.0.0",
+    "arkitekt-datalayer>=3.1.0",
 ]
 
 [dependency-groups]

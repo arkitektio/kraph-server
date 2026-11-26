@@ -1018,6 +1018,19 @@ type BigFileStore @key(fields: "id", resolvable: true) {
   originalFileName: String
   contentType: String
 
+  """
+  What the bytes are: the hex SHA-256 composite over parts cut at a size that follows from the file's size (`digestAlgorithm`). Two files with the same digest and size hold the same bytes. Null while it is owed
+  """
+  digest: String
+
+  """How `digest` was computed: `sha256-composite`"""
+  digestAlgorithm: String
+
+  """
+  A fingerprint of the size and three windows of the file: what a client computes before uploading, to ask whether the file may already be stored. A candidate, not a proof
+  """
+  sample: String
+
   """Get temporary S3 read credentials for the object."""
   accessGrant: BigFileAccessGrant!
 }
@@ -1038,6 +1051,8 @@ type BigFileUploadGrant {
   originalFileName: String
   uploadFileName: String!
   uploadContentType: String
+  partSize: ByteCount!
+  checksumAlgorithm: String!
 }
 
 """Builder arguments for generating a graph table query"""
@@ -4364,6 +4379,11 @@ type Model @key(fields: "id", resolvable: true) {
 
   """When the model was registered"""
   createdAt: DateTime!
+
+  """
+  The other models of this organization holding the same weights: the same stored file, or one whose `digest` and size are this one's. Empty while the digest is owed (`store.digest` is null); read only
+  """
+  duplicates: [Model!]!
 
   """
   What the model says about itself, for a port's `requires`: its framework and what it was trained on (run, query, position, and the identifiers its pairs share; null where none)

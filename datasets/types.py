@@ -265,6 +265,24 @@ class Model:
     )
 
     @strawberry_django.field(
+        description="The other models of this organization holding the same weights: the same stored file, or one whose `digest` and size are this one's. Empty while the digest is owed (`store.digest` is null); read only"
+    )
+    def duplicates(self) -> list["Model"]:
+        own = cast(models.TrainedModel, self)
+        store = own.store
+        same = Q(store_id=store.pk)
+        if store.digest is not None:
+            same |= Q(store__digest=store.digest, store__size_bytes=store.size_bytes)
+        return cast(
+            list[Model],
+            list(
+                models.TrainedModel.objects.filter(same, organization_id=own.organization_id)
+                .exclude(pk=own.pk)
+                .order_by("created_at", "pk")
+            ),
+        )
+
+    @strawberry_django.field(
         only=["stored_descriptors"],
         description="What the model says about itself, for a port's `requires`: its framework and what it was trained on (run, query, position, and the identifiers its pairs share; null where none)",
     )
