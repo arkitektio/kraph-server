@@ -277,7 +277,7 @@ class Model:
             list[Model],
             list(
                 models.TrainedModel.objects.filter(
-                    same, organization_id=own.organization_id
+                    same, store__organization_id=store.organization_id
                 )
                 .exclude(pk=own.pk)
                 .order_by("created_at", "pk")
